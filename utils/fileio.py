@@ -18,7 +18,7 @@ import numpy as np
 # globals
 
 # default top level rootkey
-ROOTKEY_DEFAULT=b'Events;1'
+ROOTKEY_DEFAULT='Events;1'
 
 # list of types that csv entries aren't allowed to be
 CSV_TYPES_FORBIDDEN = [list, tuple]
@@ -168,7 +168,7 @@ def get_keys(rootfile, rootkey=None):
 	# cast to strings and return
 	return list(map(to_str, keys))
 
-def load_branches(rootfile, which=set(), rootkey=None):
+def load_branches(rootfile, which=set(), rootkey=None, dtypes=float):
 	"""loads branches specified in <which> from <rootfile>. loads all if <which> is empty"""
 
 	# default rootkey if not specified
@@ -183,10 +183,13 @@ def load_branches(rootfile, which=set(), rootkey=None):
 	with uproot.open(rootfile) as root_obj:
 		trees = root_obj[rootkey]
 		keys = trees.keys()
+
 		if which:
-			branches = {to_str(key):trees.array(key) for key in keys if to_str(key) in which}
+			branches_get = [_ for _ in keys if to_str(_) in which]
 		else:
-			branches = {to_str(key):trees.array(key) for key in keys}
+			branches_get = [_ for _ in keys]
+		
+		branches = {to_str(key):trees.arrays(key).to_numpy().astype(dtypes if type(dtypes) is type else dtypes.get(key, float)) for key in branches_get}
 
 	return branches
 
