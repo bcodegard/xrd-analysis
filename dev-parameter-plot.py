@@ -28,7 +28,7 @@ FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
 if __name__ == '__main__':
 
 	rs = 3455
-	ts = 3455
+	ts = 3443
 	entries = fileio.load_csv("./data/xf/slices_{}_{}.csv".format(rs,ts), [str,str,float,float,float,float,int,float])
 
 	run   = [_[0] for _ in entries]
@@ -43,7 +43,7 @@ if __name__ == '__main__':
 	errs = np.array([_[10:13] for _ in entries])
 
 	cols = 'rgb'
-	labels = 'abc'
+	labels = 'cba'
 	centers = [0,1,0]
 	for i in range(3):
 		plt.subplot(3,1,i+1)

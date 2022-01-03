@@ -337,6 +337,23 @@ exponential = function_archetype(
 )
 exp = exponential
 
+def sqrt_guess(x,y,bounds,static_parameters):
+	x0=static_parameters[0]
+	q = y[-1]/((x[-1]/x0)**0.5)
+	return q,0.0
+sqrt = function_archetype(
+	"square_root",
+	"q*sqrt(r+x/x0)",
+	["q","r"],
+	lambda x,q,r,x0:q*np.sqrt(r+x/x0),
+	lambda y,q,r,x0:x0*((y/q)**2 - r),
+	sqrt_guess,
+	lambda x,q,r,x0:(r+x/x0)>0,
+	lambda y,q,r,x0:y>0,
+	"[{0}]*sqrt([{1}]+x/{s[0]})",
+	"{s[0]}*((x/[{0}])**2 - [{1}])",
+)
+
 # def linfrac_guess(x,y,bounds):
 # 	return 1.0,0.0,0.0,1.0
 # linfrac = function_archetype(
