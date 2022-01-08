@@ -108,7 +108,7 @@ peaks = {
 	901:peak(i=901, e=26.3448, sf=4, src=9),
 }
 
-file_template = "./data/fits/mst_{}.csv"
+file_template = "./data/fits/mst_{}{}.csv"
 
 scint_types = {
 	2053:{"area_2988_1":"LYSO", "area_2988_2":"NaI1"},
@@ -134,7 +134,7 @@ voltages = {
 	3427:900,
 }
 
-colors = {
+COLORS_DEFAULT = {
 	"NaI1":{
 		770:"lightcoral",
 		860:"firebrick",
@@ -162,11 +162,48 @@ colors = {
 	},
 }
 
+COLORS_ALTERNATE = {
+	"NaI1":{
+		770:"springgreen",
+		860:"forestgreen",
+		900:"darkgreen",
+	},
+	"NaI2":{
+		770:"plum",
+		860:"magenta",
+		900:"purple",
+	},
+}
+
 datasets = sorted(scint_types.keys())
 
-if __name__ == '__main__':
+def main(
 
-	files = [fileio.load_fits(file_template.format(_)) for _ in datasets]
+		require_id = True,
+		calibrate = False,
+		plot_separately = False,
+		fit_mu_vs_sigma = True,
+		show_calibrations = False,
+		show_excluded_peaks = False,
+
+		do_fit=False,
+
+		ni_suffix_template = "_1mv_ni{}",
+
+		ni = 5,
+
+		exclude_source_peaks = [-1,602, 101,300,400,401],
+
+		ds_whitelist = [3427],
+		ds_blacklist = [],
+
+		colors = COLORS_DEFAULT,
+
+		suffix=None,
+
+		show=True,
+
+		):
 
 	mu        = np.array([])
 	mu_err    = np.array([])
@@ -176,16 +213,37 @@ if __name__ == '__main__':
 	voltage   = np.array([])
 	scint     = np.array([])
 
-	require_id = True
-	calibrate = False
-	plot_separately = False
-	fit_mu_vs_sigma = True
-	show_calibrations = False
-	show_excluded_peaks = False
+	if do_fit:
+		fitmodel = model.sqrt(static_parameters=[100.0])
 
-	exclude_source_peaks = [-1,602, 101,300,400,401]
+	# require_id = True
+	# calibrate = False
+	# plot_separately = False
+	# fit_mu_vs_sigma = True
+	# show_calibrations = False
+	# show_excluded_peaks = False
 
-	for ifile,file in enumerate(files):
+	# ni = 5
+
+	# exclude_source_peaks = [-1,602, 101,300,400,401]
+
+	# ds_whitelist = [3427]
+	# ds_blacklist = []
+
+	included = lambda n:(n not in ds_blacklist) and ((n in ds_whitelist) or (not ds_whitelist))
+
+	ni_suffix = "" if ni is None else ni_suffix_template.format(ni)
+	files = [file_template.format(_,ni_suffix) for _ in datasets if included(_)]
+	ds_included = [_ for _ in datasets if included(_)]
+
+	if not files:
+		raise ValueError("all datasets excluded; nothing to do")
+
+	fits = [fileio.load_fits(_) for _ in files]
+
+	for ifit,fit in enumerate(fits):
+		this_ds = ds_included[ifit]
+
 		this_mu        = []
 		this_mu_err    = []
 		this_sigma     = []
@@ -195,7 +253,7 @@ if __name__ == '__main__':
 		this_scint     = []
 		this_channel   = []
 
-		for entry in file:
+		for entry in fit:
 			for ig,g in enumerate(entry.gaus_names):
 
 				if require_id:
@@ -213,8 +271,8 @@ if __name__ == '__main__':
 				this_mu_err.append(    entry.perr_gaus[ig*3 + 1] )
 				this_sigma.append(     entry.popt_gaus[ig*3 + 2] )
 				this_sigma_err.append( entry.perr_gaus[ig*3 + 2] )
-				this_voltage.append(voltages[datasets[ifile]])
-				this_scint.append(scint_types[datasets[ifile]][entry.fit_branch])
+				this_voltage.append(voltages[this_ds])
+				this_scint.append(scint_types[this_ds][entry.fit_branch])
 				this_channel.append(entry.fit_branch)
 
 		# convert to arrays
@@ -268,14 +326,15 @@ if __name__ == '__main__':
 					plt.xlabel("{}: mu (area, pVs)".format(channel))
 					plt.ylabel("energy (KeV)")
 					plt.title("set {}, A = a0 + a1*E + a2*E**2, chisq/dof={}\na0={:>2.2}\xb1{:>2.2} a1={:>2.2}\xb1{:>2.2} x2={:>2.2}\xb1{:>2.2}".format(
-						datasets[ifile],
+						this_ds,
 						round(chi2/ndof,3),
 						popt[2], perr[2],
 						popt[1], perr[1],
 						popt[0], perr[0],
 					))
 					plt.legend()
-					plt.show()
+					if show:
+						plt.show()
 
 				this_mu_ps = mod.ifn(this_mu[ftr_ch] + this_sigma[ftr_ch], *popt)
 				this_mu_ps_pse = mod.ifn(this_mu[ftr_ch] + this_sigma[ftr_ch] + this_sigma_err[ftr_ch], *popt)
@@ -301,6 +360,8 @@ if __name__ == '__main__':
 	enthr = mu>10.0
 	useid = np.logical_not(np.isin(peak_id, exclude_source_peaks))
 
+	# fig_object = plt.figure()
+
 	for this_scint in sorted(set(scint)):
 		for this_voltage in sorted(set(voltage)):
 			match = [(scint[i]==this_scint) and (voltage[i]==this_voltage) for i in range(len(scint))]
@@ -314,6 +375,14 @@ if __name__ == '__main__':
 				this_mu_err    = mu_err   [ftr_use] #[_ for i,_ in enumerate(mu_err   ) if ftr_use[i]]
 				this_sigma     = sigma    [ftr_use] #[_ for i,_ in enumerate(sigma    ) if ftr_use[i]]
 				this_sigma_err = sigma_err[ftr_use] #[_ for i,_ in enumerate(sigma_err) if ftr_use[i]]
+
+				if type(colors) is dict:
+					col = colors.get(this_scint, {})
+					if type(col) is dict:
+						col = col.get(this_voltage,'k')
+				else:
+					col = colors
+
 				plt.errorbar(
 					mu[ftr_show],
 					sigma[ftr_show],
@@ -321,9 +390,20 @@ if __name__ == '__main__':
 					mu_err[ftr_show],
 					ls="",
 					marker=".",
-					color=colors[this_scint][this_voltage],
-					label="{}, {}v".format(this_scint, this_voltage),
+					color=col,#colors.get(this_scint, {}).get(this_voltage,'k'),
+					label="{}, {}v{}".format(this_scint, this_voltage, "" if suffix is None else ", {}".format(suffix)),
 				)
+
+				if do_fit:
+					popt, pcov, chi2, ndof = fitmodel.fit_with_errors(
+						mu[ftr_show],
+						sigma[ftr_show],
+						mu_err[ftr_show],
+						sigma_err[ftr_show],
+					)
+
+					xaxis = np.linspace(min(mu[ftr_show]), max(mu[ftr_show]), 250)
+					plt.plot(xaxis, fitmodel(xaxis,*popt), ls="--", marker="", color=col, )
 
 				if plot_separately:	
 					if fit_mu_vs_sigma:
@@ -357,13 +437,16 @@ if __name__ == '__main__':
 						max(mu),
 					))
 					plt.legend()
-					plt.show()
+					if show:
+						plt.show()
 	
 
 	if not plot_separately:
-		eye_c = 17.0
-		eye_r = 1.8
-		xaxis = np.logspace(max([1,math.log(min(mu),10)]),math.log(max(mu),10),500)
+		# eye_c = 17.0
+		# eye_r = 1.8
+		eye_c = 0.3 * 2.4/1.4 * 1.15
+		eye_r = 1.2
+		xaxis = np.logspace(max([1,math.log(min(mu[ftr_show]),10)]),math.log(max(mu[ftr_show]),10),500)
 		plt.plot(xaxis,np.sqrt(xaxis)*eye_c,'k-',label="eyeballed sqrt(x)")
 		plt.plot(xaxis,np.sqrt(xaxis)*eye_c*eye_r,'k--')
 		plt.plot(xaxis,np.sqrt(xaxis)*eye_c/eye_r,'k--')
@@ -376,6 +459,47 @@ if __name__ == '__main__':
 			"energy (KeV)" if calibrate else "area (pVs)",
 		))
 		plt.legend()
-		plt.show()
+
+		# fileio.dump_figure(fig_object, "./figs/pickled/fig3.pickle")
+
+		if show:
+			plt.show()
+
+if __name__ == '__main__':
+
+	cseq = [
+		{"NaI1":"darkgreen"  , "NaI2":"purple"},
+		{"NaI1":"forestgreen", "NaI2":"magenta"},
+		{"NaI1":"springgreen", "NaI2":"plum"},
+	]
+
+
+	calibrate = True
+
+	# amounts = [0,5,25]
+	amounts = [None]
+
+	for i,amount in enumerate(amounts):
+		main(
+			ni=amount,
+			show=False,
+
+			do_fit=False,
+
+			calibrate=calibrate,
+
+			# ni_suffix_template = "_1mv_ni{}",
+			ni_suffix_template = "_ni{}",
+
+			# exclude_source_peaks = [-1,602, 101,300,400,401,  200],
+			# require_id = False,
+			# show_excluded_peaks = True,
+
+			colors=cseq[i],
+			suffix=None if amount is None else "+{}mV noise".format(amount),
+		)
+
+	plt.show()
+
 
 

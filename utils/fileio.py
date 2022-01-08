@@ -34,8 +34,6 @@ ERR_FORBIDDEN_TYPE = "forbidden type {} found as entry"
 TYPELIST_CALIBRATION = [str, float, int, int, float, int, float]
 
 
-
-
 # internal utility functions
 
 def to_str(str_or_bytes):
@@ -156,40 +154,66 @@ def update_csv(file, new_rows, typelist, n_match_exact, tolerate_missing=True, b
 def get_keys(rootfile, rootkey=None):
 	"""gets a list of all branch names (keys) for specified root file and top level rootkey"""
 	
-	# default rootkey if not specified
-	if rootkey is None:
-		rootkey = ROOTKEY_DEFAULT
-
 	# open root file and get list of branch names (keys)
 	with uproot.open(rootfile) as root_obj:
+
+		# default rootkey if not specified
+		if rootkey is None:
+			if ROOTKEY_DEFAULT in root_obj.keys():
+				rootkey = ROOTKEY_DEFAULT
+			else:
+				rootkey = root_obj.keys()[0]
+
 		trees = root_obj[rootkey]
 		keys = trees.keys()
 
 	# cast to strings and return
 	return list(map(to_str, keys))
 
-def load_branches(rootfile, which=set(), rootkey=None, dtypes=float):
-	"""loads branches specified in <which> from <rootfile>. loads all if <which> is empty"""
+def branch_to_array(branch, key=False, dtype=float):
+	# is 2d
+	if key:
+		return np.array([_[key].to_numpy() for _ in branch], dtype=dtype)
+	else:
+		return branch.to_numpy().astype(dtype)
 
-	# default rootkey if not specified
-	if rootkey is None:
-		rootkey = ROOTKEY_DEFAULT
+def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
+	"""loads branches specified in <which> from <rootfile>. loads all if <which> is empty"""
 
 	# allows single branch to be specified as string instead of set
 	if type(which) is str:
 		which = {which}
 
+	# convert to dict of key:is_2d if not already
+	if type(which) is set:
+		which = {key:False for key in which}
+
 	# open root file and extract branches as arrays
 	with uproot.open(rootfile) as root_obj:
-		trees = root_obj[rootkey]
-		keys = trees.keys()
 
-		if which:
-			branches_get = [_ for _ in keys if to_str(_) in which]
-		else:
-			branches_get = [_ for _ in keys]
-		
-		branches = {to_str(key):trees.arrays(key).to_numpy().astype(dtypes if type(dtypes) is type else dtypes.get(key, float)) for key in branches_get}
+		# default rootkey if not specified
+		if rootkey is None:
+			if ROOTKEY_DEFAULT in root_obj.keys():
+				rootkey = ROOTKEY_DEFAULT
+			else:
+				rootkey = root_obj.keys()[0]
+
+		tree = root_obj[rootkey]
+		keys = tree.keys()
+
+		# if which:
+		branches_get = [_ for _ in keys if to_str(_) in which]
+		# else:
+			# branches_get = [_ for _ in keys]
+		branches = {}
+		for b in branches_get:
+			branches[b] = branch_to_array(
+				tree.arrays(b),
+				b if which.get(b,False) else False,
+				dtypes.get(b,float),
+			)
+
+		# branches = {to_str(key):tree.arrays(key).to_numpy().astype(dtypes if type(dtypes) is type else dtypes.get(key, float)) for key in branches_get}
 
 	return branches
 
@@ -208,6 +232,16 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes=float):
 # spectrum models
 # calibrations (load, update/save, get best, )
 # 
+
+# structure for CSV file case
+# 
+# class for entry, holds properties in self attributes in accessible way
+# has methods to pack and unpack CSV entries
+# may have convenience functions for common use cases (EG, applying a model that a calibration entry represents)
+# 
+# functions to save, load, update CSV files of specific type
+
+
 
 def load_calibration(calibration_file,tolerate_missing=False):
 	return load_csv(calibration_file, TYPELIST_CALIBRATION, tolerate_missing)
@@ -282,6 +316,14 @@ FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
 class fit_result(object):
 	def __init__(self, contents):
 		self.load_from_contents(contents)
+
+	def unpack(self, contents):
+		"""parses contents of CSV entry and sets self attripbutes to match"""
+		...
+
+	def pack(self):
+		"""generate CSV entry from self attributes"""
+		...
 
 	def load_from_contents(self, contents):
 		if contents is None:
@@ -361,3 +403,22 @@ def load_fits(file):
 # root cases
 # ...
 
+
+
+
+# # matplotlib cases
+# # figure dumping / loading breaks some things
+# # deprecated until issue can be resolved
+
+# def dump_figure(figure, destination, overwrite=False):
+# 	if not overwrite:
+# 		if os.path.exists(destination):
+# 			raise ValueError("path {} already exists. set overwrite=True to overwrite.".format(destination))
+
+# 	with open(destination, "wb") as fout:
+# 		pickle.dump(figure, fout)
+
+# def load_figure(destination):
+# 	with open(destination, "rb") as fin:
+# 		figure = pickle.load(fin)
+# 	return figure

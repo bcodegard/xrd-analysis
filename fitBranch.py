@@ -33,6 +33,7 @@ RESULT_LOC = "./data/fits/{}.csv"
 EXT_ROOT = ".root"
 EXT_CSV  = ".csv"
 EXT_PNG  = ".png"
+EXT_NPZ  = ".npz"
 
 # delimiters for argparse
 AP_DELIMITER = ","
@@ -139,7 +140,7 @@ def csv_format_cuts(cuts):
 
 
 # main
-def main(args):
+def main(args, suspend_show=False, colors={}):
 
 
 	# stage 0: args
@@ -151,9 +152,10 @@ def main(args):
 		run = DATA_LOC.format(run_id)
 	except:
 		run = args["run"]
-		if not run.endswith(EXT_ROOT):
+		if not (run.endswith(EXT_ROOT) or run.endswith(EXT_NPZ)):
 			run += EXT_ROOT
-		run_id = int(run.rpartition(os.sep)[2].partition(EXT_ROOT)[0][3:])
+		which_ext = '.'+run.rpartition('.')[2]
+		run_id = int(run.rpartition(os.sep)[2].partition(which_ext)[0][3:])
 		# todo: better extraction of run#. Will fail if filename format changes.
 		# could also switch to using full filename instead of ID in calibration entries.
 
@@ -200,6 +202,8 @@ def main(args):
 	xlog = args["xlog"]
 	ylog = args["ylog"]
 	show = args["show"]
+	label = args["label"]
+	label_suffix=", {}".format(label) if label else ""
 
 	# output args
 	file_out = args["out"]
@@ -241,7 +245,14 @@ def main(args):
 	# load data
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
-	branches = fileio.load_branches(run, branches_needed)
+
+	if run.endswith(EXT_ROOT):
+		branches = fileio.load_branches(run, branches_needed)
+	else:
+		# print([_ for _ in np.load(run).keys()])
+		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed}
+		# print(branches.keys())
+
 	if verbosity:
 		print("loaded branches: {}".format(branches_needed))
 		print("shapes: {}".format([_.shape for _ in branches.values()]))
@@ -480,23 +491,14 @@ def main(args):
 
 	# if showing or saving the figure, we need to compose it
 	if show or fig_out:
-
-		if xlog and ylog:
-			plotter = plt.loglog
-		elif xlog:
-			plotter = plt.semilogx
-		elif ylog:
-			plotter = plt.semilogy
-		else:
-			plotter = plt.plot
 		
 		# display data
 		if "d" in display:
-			plotter(midpoints, counts, "k.", label="data")
+			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="data{}".format(label_suffix))
 
 		# display root result
 		if "r" in display:
-			plotter(midpoints, fit_model(midpoints,*popt), "g-", label="fit")
+			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
 		# # display root result +- errors
 		# if "e" in display:
@@ -528,10 +530,10 @@ def main(args):
 					# display statistical errors
 					if "e" in display:
 						label_error = "\xb1stat err" if first_peak else None
-						plt.axvline(popt[ip]+perr[ip], ls='--', color='r', label=label_error)
-						plt.axvline(popt[ip]-perr[ip], ls='--', color='r', )
+						plt.axvline(popt[ip]+perr[ip], ls='--', color=colors.get("pe","r"), label=label_error)
+						plt.axvline(popt[ip]-perr[ip], ls='--', color=colors.get("pe","r"), )
 
-					plt.axvline(popt[ip], ls='--', color='darkred', label=label_center)
+					plt.axvline(popt[ip], ls='--', color=colors.get("p","darkred"), label=label_center)
 
 					first_peak = False
 
@@ -548,6 +550,12 @@ def main(args):
 			rfs=fit_model.rfs(),
 		))
 
+		# apply axis scaling
+		if xlog:
+			plt.xscale("log")
+		if ylog:
+			plt.yscale("log")
+		
 	# save the figure if specified
 	if fig_out:
 		
@@ -562,7 +570,8 @@ def main(args):
 
 	# show the figure if requested
 	if show:
-		plt.show()
+		if not suspend_show:
+			plt.show()
 
 	# save details to a csv file if requested
 	if file_out:
@@ -650,11 +659,65 @@ if __name__ == '__main__':
 	parser.add_argument("-x",dest="xlog",action="store_true",help="sets x axis of figure to log scale")
 	parser.add_argument("-y",dest="ylog",action="store_true",help="sets y axis of figure to log scale")
 	parser.add_argument("-s",dest="show",action="store_false",help="don't show figure as pyplot window")
+	parser.add_argument("--l",type=str,default="",dest='label',help="custom label")
 
 	# output arguments
 	parser.add_argument("--out",type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
 	parser.add_argument("-v",action='count',default=0,help="verbosity")
 
-	args = vars(parser.parse_args())
-	main(args)
+	ARG_MULTI = "AND"
+
+	# indicates multiple argument sets -> multiple plots, put on same plot
+	if ARG_MULTI in sys.argv:
+
+		# todo better color handling
+		# todo better label handling
+
+		# list of complete argument sets
+		arg_sets = []
+		
+		# current argument set being constructed
+		this_set = []
+
+		# iterate through argv
+		for a in sys.argv[1:]:
+
+			# delimiter
+			if a == ARG_MULTI:
+
+				# add current set to list of complete sets
+				arg_sets.append(this_set)
+
+				# reset current set
+				this_set = []
+
+			# not delimiter
+			else:
+				# add to current set
+				this_set.append(a)
+
+		# add last set to list of complete sets
+		arg_sets.append(this_set)
+
+
+		COLOR_SEQ = "kmbrcy"
+		
+		# call main with each set of arguments in turn,
+		# additionally communicating that each call is
+		# part of a multi-call execution
+		for i,arg_set in enumerate(arg_sets):
+			this_args = vars(parser.parse_args(arg_set))
+			main(
+				this_args,
+				suspend_show = True,
+				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
+			)
+
+		# show figure with all calls' data
+		plt.show()
+
+	# single call
+	else:
+		args = vars(parser.parse_args())
+		main(args)
