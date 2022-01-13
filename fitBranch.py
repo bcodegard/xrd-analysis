@@ -445,9 +445,9 @@ def main(args, suspend_show=False, colors={}):
 
 	# add suppressed monomials
 	for ism,sm in enumerate(smono):
-		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]]]
+		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
 		order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
-		fit_model_components.append(model.smono(this_bounds, [sm[0]]))
+		fit_model_components.append(model.smono(this_bounds))
 
 	# compose model
 	if len(fit_model_components):
@@ -481,9 +481,10 @@ def main(args, suspend_show=False, colors={}):
 					round(perr[ipar],DISPLAY_PRECISION),
 				))
 				ipar += 1
-		print("\nfull covariance matrix")
-		print(cov)
-		print("\nsquare root of diagonal (should be equal to parameter errors)")
+		if verbosity >= 2:
+			print("\nfull covariance matrix")
+			print(cov)
+		print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
 		print(np.sqrt(np.diag(cov)))
 
 

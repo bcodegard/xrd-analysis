@@ -11,7 +11,7 @@ import numpy as np
 import utils.model as model
 import matplotlib.pyplot as plt
 
-test_fitting = True
+test_fitting = False
 if test_fitting:
 
 	test_model = model.line() + model.gaus([None,[5,7],None])
@@ -33,7 +33,7 @@ if test_fitting:
 
 	print("test_fitting finished without errors")
 
-test_multiple_functions = True
+test_multiple_functions = False
 if test_multiple_functions:
 
 	e = model.exponential()
@@ -85,7 +85,7 @@ if test_multiple_functions:
 
 	print("test_multiple_functions finished without errors")
 
-test_individual_functions = True
+test_individual_functions = False
 if test_individual_functions:
 
 
@@ -161,6 +161,26 @@ if test_individual_functions:
 		print(m.irfs_custom(x="x/[0] - 1", p=[3.5]*m.npars))
 
 	print("test_individual_functions finished without errors")
+
+test_metamodel = True
+if test_metamodel:
+
+	e = model.exponential()
+	l = model.line()
+	g = model.gaus()
+
+	multi = l+g
+
+	meta = model.metamodel(
+		multi,
+		xfp=[5, np.array([-1,0]), 5, np.array([0,1]), 8],
+		xfp_rfs=[],
+		xfx=None,
+		)
+
+	print(meta.rfs())
+	print(meta(1, 2, 3))
+
 
 print("all enabled tests finished without errors")
 sys.exit(0)

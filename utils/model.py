@@ -87,8 +87,17 @@ def fit_hist_with_root(
 	lo = [_[0] for _ in bounds]
 	hi = [_[1] for _ in bounds]
 
-	# scipy fit for parameter guess input to root fit
-	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
+	# determined fixed parameters and exclude from fit
+	is_fixed = [l==h for l,h in bounds]
+	if any(is_fixed):
+		# for now, just use p0 in this case
+		# TODO use scipy fit in case of fixed parameters instead of defaulting to p0
+		# can make lambda which meshes dynamic and fixed parameters nicely
+		popt = np.array(p0)
+
+	else:
+		# scipy fit for parameter guess input to root fit
+		popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
 
 	# root object initialization and fit
 	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
@@ -242,11 +251,11 @@ class model_single(object):
 		if x is None:
 			x = "x"
 		
-		# case: p is None
+		# case: p is None -> [0, npars)
 		if p is None:
 			p = range(self.npars)
 
-		# case: type(p) is int
+		# case: type(p) is int -> [p, p+npars)
 		if type(p) is int:
 			p = range(p, p+self.npars)
 
@@ -336,8 +345,37 @@ class model_multiple(object):
 			p0 += c.guess(x,y)
 		return p0
 
-	def rfs_custom(self, x, p):
-		...
+	def rfs_custom(self, x, p, needs_parens=True):
+		pieces = []
+		istart = 0
+		for ic,c in enumerate(self.components):
+			pieces.append(c.rfs_custom("{x}",["{{p[{}]}}".format(_) for _ in range(istart,istart+c.npars)],False))
+			istart += c.npars
+		template = " + ".join(pieces)
+
+		post_format = "({})" if needs_parens else "{}"
+
+		# case: x is None
+		if x is None:
+			x = "x"
+		
+		# case: p is None -> [0, npars)
+		if p is None:
+			p = range(self.npars)
+
+		# case: type(p) is int -> [p, p+npars)
+		if type(p) is int:
+			p = range(p, p+self.npars)
+
+		p_formatted = []
+		for par in p:
+			if type(par) is int:
+				p_raw = "[{}]".format(par)
+			else:
+				p_raw = par
+			p_formatted.append(post_format.format(p_raw))
+
+		return template.format(x=post_format.format(x), p=p_formatted)
 
 	def irfs_custom(self, x, p):
 		raise ValueError(ERR_I_MULTI)
@@ -364,6 +402,121 @@ class model_multiple(object):
 
 	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
 		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
+
+
+
+
+class metamodel(object):
+	""""""
+
+	def __init__(self, m, xfp, xfp_rfs=None, xfx=False):
+		
+		# reference to model being transformed
+		# might not need to actually store this reference
+		self.m = m
+
+		# transformations of parameters of m
+		# one token per parameter that model m takes
+		self.xfp = xfp
+
+		# list of root function strings describing
+		# the dependence of each parameter p of model m
+		# on the parameters q of the metamodel.
+		# 
+		# entries are only accessed for user-defined functions
+		# and are auto-generated for all other cases.
+		# 
+		# can be None if no custom functions are being used
+		self.xfp_rfs = xfp_rfs
+
+		# constant linear transformation of independent variable (x)
+		# used to constrain magnitude of numbers in fit routine
+		# xprime = xfx[0] + x*xfx[1], or xprime=x if xfx is False
+		self.xfx = xfx
+
+	def __call__(self, x, *q):
+		return self.fn(x, *q)
+
+	def rfs(self,needs_parens=True):
+		"""generate root function string"""
+
+		# transforming x is done before fitting since the transformation of x is constant
+		x = None
+
+		# entries in p correspond to parameters of m
+		# but [0] etc. refer to components of q, not p.
+		p = []
+
+		for i,token in enumerate(self.xfp):
+
+			# case: number -> str(token)
+			if type(token) in (int, float):
+				value = str(token)
+
+			# case: array a -> a dot "[0], [1], ... "
+			elif type(token) is np.ndarray:
+				value = "+".join(["[{}]".format(i) if val==1 else "[{}]*{}".format(i,val) for i,val in enumerate(token) if val])
+				if not value:
+					value = "0"
+
+			# case: function -> use value in xfp_rfs
+			else:
+				value = self.xfp_rfs[i]
+
+			p.append(value)
+
+		# return "+".join(p)
+		return self.m.rfs_custom(x=x,p=p,needs_parens=needs_parens)
+
+
+	def transform_parameters(self, q):
+		"""calculate parameters p for model m given parameters q"""
+
+		p = []
+		for token in self.xfp:
+
+			# case: number -> literal constant value
+			if type(token) in (int, float):
+				value = token
+
+			# # todo: this is a bad way of doing this. disabled for now.
+			# #       can just use array case with basis vector for now.
+			# # case: str "n" -> equal to parameter at index n in q
+			# elif type(token) is str:
+			# 	value = q[int(token)]
+
+			# case: array a -> a dot q
+			elif type(token) is np.ndarray:
+				value = np.dot(token, q)
+
+			# case: function f -> f(q)
+			else:
+				value = token(q)
+
+			p.append(value)
+
+		return p
+
+	def fn(self, x, *q, is_unprimed=True):
+		
+		# apply linear transformation
+		# x is constant, and therefore so is xprime, for a given fit routine.
+		# where to do this so that it only needs to happen once during fit routine?
+		# maybe calc at start of fit routine and keep it
+		# pass as argument to this function or have flag for whether to use stored value
+		if is_unprimed and self.xfx:
+			x = self.xfx[0] + x*self.xfx[1]
+
+		p = self.transform_parameters(q)
+
+		return self.m(x, *p)
+
+
+
+
+
+
+
 
 
 # standard archetypes
@@ -421,7 +574,8 @@ sqrt = function_archetype(
 
 
 def suppressed_monomial_guess(x,y,bounds):
-	n = 2
+	print(bounds)
+	n=sum(bounds[2])/2
 	if bounds[0][1] is np.inf:
 		i_xpeak = np.argmax(y)
 	else:
@@ -429,7 +583,7 @@ def suppressed_monomial_guess(x,y,bounds):
 		i_xpeak = np.searchsorted(x, xpeak)
 	xpeak = x[i_xpeak]
 	c = y[i_xpeak]/n
-	return xpeak,c
+	return xpeak,c,n
 def mf_smono(x,xpeak,c,n):
 	quantity = n*(x/xpeak)
 	return c*(quantity**n)*np.exp(-quantity)
@@ -557,7 +711,7 @@ def gaussian_guess(x,y,bounds):
 	return [c_guess, mu_guess, sigma_guess]
 gaussian = function_archetype(
 	name    = "gaussian",
-	formula = "c*exp(-(x-mu)**2/(2*sigma**2))",
+	formula = "c*exp(-0.5*((x-mu)/sigma)**2)",
 	pnames  = ["c","mu","sigma"],
 	model_function   = lambda x, c, mu, sigma:c*np.exp(-0.5*((x-mu)/sigma)**2),
 	i_model_function = None,
