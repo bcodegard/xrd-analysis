@@ -10,7 +10,7 @@ import numpy as np
 import utils.model as model
 import matplotlib.pyplot as plt
 
-test_fitting = True
+test_fitting = False
 if test_fitting:
 
 	test_model = model.line() + model.gaus([None,[5,7],None])
@@ -31,11 +31,11 @@ if test_fitting:
 test_multiple_functions = False
 if test_multiple_functions:
 
-	e = model.exponential(None)
-	p = model.powc(None)
-	c = model.constant(None)
-	l = model.line(None)
-	q = model.quad(None)
+	e = model.exponential()
+	p = model.powc()
+	c = model.constant()
+	l = model.line()
+	q = model.quad()
 
 	ec  = e + c
 	el  = e + l
@@ -78,26 +78,39 @@ if test_multiple_functions:
 	print(pe.val(test_x_neg, [1, 2,1,1,1]))
 	print(pe.val(test_x_neg, [1,-2,1,1,1]))
 
-test_individual_functions = False
+test_individual_functions = True
 if test_individual_functions:
 
-	e = model.exponential(None)
-	c = model.constant(None)
-	l = model.line(None)
+
+	e = model.exponential()
+	p = model.powc()
+	c = model.constant()
+	l = model.line()
+	q = model.quad()
+
+	sqrt  = model.sqrt()
+	smono = model.smono()
+	# eloc  = model.expl()
+	power = model.powerlaw()
+	gaus  = model.gaus()
+
+	ms_all = [e, sqrt, smono, c, l, q, power, p, gaus]
+	ms_inv = [e, sqrt, l, q, power, p]
+
 
 	print("function calls")
-	print(e(5, [1, 1/5.0]))
-	print(e(1, [2, 1.0]))
-	print(c(24, [5]))
-	print(c(19, [666]))
-	print(l(0, [5, 9]))
-	print(l(5, [10, 10]))
+	print(e(5 , *[1, 1/5.0]))
+	print(e(1 , *[2, 1.0]))
+	print(c(24, *[5]))
+	print(c(19, *[666]))
+	print(l(0 , *[5, 9]))
+	print(l(5 , *[10, 10]))
 
 	print("\ninverse function calls")
-	print(e.ifn(math.e ** 2, [1, 1]))
-	print(e.ifn(10, [4, 0.5]))
-	print(l.ifn(4,[1,1]))
-	print(l.ifn(10,[1,0.001]))
+	print(e.ifn(math.e ** 2, *[1, 1]))
+	print(e.ifn(10         , *[4, 0.5]))
+	print(l.ifn(4          , *[1, 1]))
+	print(l.ifn(10         , *[1, 0.001]))
 
 	print("\nguess calls")
 	test_x = np.linspace(3,4,100)
@@ -110,17 +123,33 @@ if test_individual_functions:
 	print("\nvalidation and inverse calls")
 	test_y_pos  = np.linspace(1,2,5)
 	test_y_neg  = np.linspace(-1,-2,5)
-	print(e.ival(test_y_pos, [3, -0.4]))
-	print(e.ival(test_y_neg, [5, -0.2]))
-	print(e.ival(test_y_pos, [-2, 0.4]))
-	print(e.ival(test_y_neg, [-1, -0.2]))
+	print(e.ival(test_y_pos, *[3, -0.4]))
+	print(e.ival(test_y_neg, *[5, -0.2]))
+	print(e.ival(test_y_pos, *[-2, 0.4]))
+	print(e.ival(test_y_neg, *[-1, -0.2]))
 
 	print("\nroot function template and inverse requests")
-	for m in [e,l,c]:
+	for m in ms_all:
+		print("\nrfs, {}".format(m.name))
 		print(m.rfs())
 		print(m.rfs(4))
 		print(m.rfs(None))
-	for m in [e,l]:
+	for m in ms_inv:
+		print("\nirfs, {}".format(m.name))
 		print(m.irfs())
 		print(m.irfs(4))
 		print(m.irfs(None))
+
+	print("\ncustom root function formatting")
+	for m in ms_all:
+		print("\nrfs_custom, {}".format(m.name))
+		print(m.rfs_custom())
+		print(m.rfs_custom(x="x/[0] - 1", p=1))
+		print(m.rfs_custom(x="x/5.0 - 1", p=[1]+[3.5]*(m.npars-1)))
+
+	for m in ms_inv:
+		print("\nirfs_custom, {}".format(m.name))
+		print(m.irfs_custom())
+		print(m.irfs_custom(x="x/[0] - 1", p=1))
+		print(m.irfs_custom(x="x/[0] - 1", p=[3.5]*m.npars))
+

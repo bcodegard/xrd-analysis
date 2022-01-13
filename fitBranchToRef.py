@@ -542,6 +542,11 @@ def main(args):
 	print("")
 	scale_fit = " + ".join(scale_fit_components)
 
+	print("\n".join(scale_fit_components))
+	print("")
+	print(scale_fit)
+	print("")
+
 	# root object initialization and fit
 	xdata = midpoints
 	ydata = counts

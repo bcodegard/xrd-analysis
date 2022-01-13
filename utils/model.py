@@ -208,16 +208,43 @@ class model_single(object):
 		else:
 			return self.arch.parameter_guess_function(x,y,self.bounds)
 
-	def rfs(self, istart=0):
+	def rfs_custom(self, x=None, p=None, needs_parens=True, inv=False):
+		template = self.arch.i_root_function_template if inv else self.arch.root_function_template
+		post_format = "({})" if needs_parens else "{}"
+
+		# case: x is None
+		if x is None:
+			x = "x"
+		
+		# case: p is None
+		if p is None:
+			p = range(self.npars)
+
+		# case: type(p) is int
+		if type(p) is int:
+			p = range(p, p+self.npars)
+
+		p_formatted = []
+		for par in p:
+			if type(par) is int:
+				p_raw = "[{}]".format(par)
+			else:
+				p_raw = par
+			p_formatted.append(post_format.format(p_raw))
+
+		return template.format(x=post_format.format(x), p=p_formatted)
+
+	def irfs_custom(self, x=None, p=None, needs_parens=True):
+		return self.rfs_custom(x, p, needs_parens, True)
+
+	def rfs(self, istart=0, inv=False):
+		template = self.arch.i_root_function_template if inv else self.arch.root_function_template
 		if istart is not None:
-			return self.arch.root_function_template.format(*range(istart, istart+self.npars),s=self.static_parameters)
+			return template.format(x="x", p=["[{}]".format(_) for _ in range(istart,istart+self.npars)])
 		else:
-			return self.arch.root_function_template
+			return template.format(x="x", p=["[{{{}}}]".format(_) for _ in range(self.npars)])
 	def irfs(self, istart=0):
-		if istart is not None:
-			return self.arch.i_root_function_template.format(*range(istart, istart+self.npars),s=self.static_parameters)
-		else:
-			return self.arch.i_root_function_template
+		return self.rfs(istart, True)
 
 	def fit(self, *args, **kwargs):
 		return fit_hist_with_root(self, *args, **kwargs)
@@ -282,6 +309,11 @@ class model_multiple(object):
 			p0 += c.guess(x,y)
 		return p0
 
+	def rfs_custom(self, x, p):
+		...
+	def irfs_custom(self, x, p):
+		raise ValueError(ERR_I_MULTI)
+
 	def rfs(self,istart=0):
 		pieces = []
 		if istart is not None:
@@ -315,6 +347,7 @@ def always_true(z,*pars):
 	else:
 		return True
 
+
 def exp_guess(x,y,bounds):
 	dx = x[-1] - x[0]
 	ry = y[-1] / y[0]
@@ -324,53 +357,43 @@ def exp_guess(x,y,bounds):
 	b = y[0] * ry ** (-x[0] / dx)
 	return [b,k]
 exponential = function_archetype(
-	"exponential", # name
-	"b*exp(k*x)",  # formula
-	["b","k"],     # parameters
-	lambda x,b,k:b*np.exp(k*x), # model function
-	lambda y,b,k:np.log(y/b)/k, # inverse model function
-	exp_guess, # parameter guess function
-	None,                 # input validation function
-	lambda y,b,k:(y/b)>0, # inverse input validation function
-	"[{0}]*exp([{1}]*x)", # root function template
-	"log(x/[{0}])/[{1}]", # inverse root function template
+	name    = "exponential",
+	formula = "b*exp(k*x)",
+	pnames  = ["b","k"],
+	model_function   = lambda x,b,k:b*np.exp(k*x),
+	i_model_function = lambda y,b,k:np.log(y/b)/k,
+	parameter_guess_function    = exp_guess,
+	input_validation_function   = None,
+	i_input_validation_function = lambda y,b,k:(y/b)>0,
+	root_function_template      = "{p[0]}*exp({p[1]}*{x})",
+	i_root_function_template    = "log({x}/{p[0]})/{p[1]}",
+	# root_function_template      = "[{0}]*exp([{1}]*x)",
+	# i_root_function_template    = "log(x/[{0}])/[{1}]",
 )
 exp = exponential
 
-def sqrt_guess(x,y,bounds,static_parameters):
-	x0=static_parameters[0]
-	q = y[-1]/((x[-1]/x0)**0.5)
+
+def sqrt_guess(x,y,bounds):
+	q = y[-1]/((x[-1])**0.5)
 	return q,0.0
 sqrt = function_archetype(
-	"square_root",
-	"q*sqrt(r+x/x0)",
-	["q","r"],
-	lambda x,q,r,x0:q*np.sqrt(r+x/x0),
-	lambda y,q,r,x0:x0*((y/q)**2 - r),
-	sqrt_guess,
-	lambda x,q,r,x0:(r+x/x0)>0,
-	lambda y,q,r,x0:y>0,
-	"[{0}]*sqrt([{1}]+x/{s[0]})",
-	"{s[0]}*((x/[{0}])**2 - [{1}])",
+	name    = "square_root",
+	formula = "q*sqrt(r+x)",
+	pnames  = ["q","r"],
+	model_function   = lambda x,q,r:q*np.sqrt(r+x),
+	i_model_function = lambda y,q,r:(y/q)**2 - r,
+	parameter_guess_function    = sqrt_guess,
+	input_validation_function   = lambda x,q,r:(r+x)>0,
+	i_input_validation_function = lambda y,q,r:y>0,
+	root_function_template      = "{p[0]}*sqrt({p[1]}+{x})",
+	i_root_function_template    = "(({x}/{p[0]})**2 - {p[1]})",
+	# i_root_function_template    = "[{0}]*sqrt([{1}]+x/{s[0]})",
+	# i_input_validation_function = "{s[0]}*((x/[{0}])**2 - [{1}])",
 )
 
-# def linfrac_guess(x,y,bounds):
-# 	return 1.0,0.0,0.0,1.0
-# linfrac = function_archetype(
-# 	"linear_fractional",
-# 	"(a*x+b)/(c*x+d)",
-# 	["a","b","c","d"],
-# 	lambda x,a,b,c,d:(a*x+b)/(c*x+d),
-# 	None,
-# 	linfrac_guess,
-# 	lambda x,a,b,c,d:c*x != d,
-# 	None,
-# 	"(x*[{0}]+[{1}])/(x*[{2}]+[{3}])",
-# 	None,
-# )
 
-def suppressed_monomial_guess(x,y,bounds,static_parameters):
-	n = static_parameters[0]
+def suppressed_monomial_guess(x,y,bounds):
+	n = 2
 	if bounds[0][1] is np.inf:
 		i_xpeak = np.argmax(y)
 	else:
@@ -383,53 +406,56 @@ def mf_smono(x,xpeak,c,n):
 	quantity = n*(x/xpeak)
 	return c*(quantity**n)*np.exp(-quantity)
 suppressed_monomial = function_archetype(
-	"suppressed_monomial",         # name
-	"c * (n*x/xpeak)**n * exp(-n*x/xpeak)", # formula
-	["xpeak","c"], # dynamic parameters
-	mf_smono, # python model function
-	None,     # inverse python model function
-	suppressed_monomial_guess, # parameter guess function
-	lambda x,xpeak,c,n:x>0, # input validation function
-	None,                                     # inverse input validation function
-	"[{1}]*(({s[0]}*x/[{0}])**{s[0]})*exp(-{s[0]}*x/[{0}])", # root function templte
-	None,                                              # inverse root function template
+	name    = "suppressed_monomial",
+	formula = "c * (n*x/xpeak)**n * exp(-n*x/xpeak)",
+	pnames  = ["xpeak","c","n"],
+	model_function   = mf_smono,
+	i_model_function = None,
+	parameter_guess_function    = suppressed_monomial_guess,
+	input_validation_function   = lambda x,xpeak,c,n:x>0,
+	i_input_validation_function = None,
+	root_function_template      = "{p[1]}*(({p[2]}*{x}/{p[0]})**{p[2]})*exp(-{p[2]}*{x}/{p[0]})",
+	i_root_function_template    = None,
 )
 smono = suppressed_monomial
 
-# exponential with static parameter x0
-def exponential_local_guess(x,y,bounds,static_parameters):
-	x0 = static_parameters[0]
-	k = x0 * (math.log(y[0]) - math.log(y[-1])) / (x[0] - x[-1])
-	b = y[0] * math.exp(-k*(x[0]/x0-1))
-	return [b,k]
-exponential_local = function_archetype(
-	"local_exponential",
-	"b*exp(k*(x/x0-1))",
-	["b","k"],
-	lambda x,b,k,x0:b*np.exp(k*(x/x0-1)),
-	lambda y,b,k,x0:(np.log(y/b)/k + 1)*x0,
-	exponential_local_guess,
-	None,
-	lambda y,b,k,x0:(y/b)>0,
-	"[{0}]*exp([{1}]*(x/{s[0]}-1))",
-	"(log(x/[{0}])/[{1}]+1)*{s[0]}",
-	)
-expl = exponential_local
+
+# # exponential with static parameter x0
+# def exponential_local_guess(x,y,bounds,static_parameters):
+# 	x0 = static_parameters[0]
+# 	k = x0 * (math.log(y[0]) - math.log(y[-1])) / (x[0] - x[-1])
+# 	b = y[0] * math.exp(-k*(x[0]/x0-1))
+# 	return [b,k]
+# exponential_local = function_archetype(
+# 	name    = "local_exponential",
+# 	formula = "b*exp(k*(x/x0-1))",
+# 	pnames  = ["b","k"],
+# 	model_function   = lambda x,b,k,x0:b*np.exp(k*(x/x0-1)),
+# 	i_model_function = lambda y,b,k,x0:(np.log(y/b)/k + 1)*x0,
+# 	parameter_guess_function    = exponential_local_guess,
+# 	input_validation_function   = None,
+# 	i_input_validation_function = lambda y,b,k,x0:(y/b)>0,
+# 	root_function_template      = "[{0}]*exp([{1}]*(x/{s[0]}-1))",
+# 	i_root_function_template    = "(log(x/[{0}])/[{1}]+1)*{s[0]}",
+# 	)
+# expl = exponential_local
+
 
 constant = function_archetype(
-	"constant",
-	"a0",
-	["a0"],
-	lambda x,c:x*0+c,
-	None,
-	lambda x,y,bounds:[y.mean()],
-	None,
-	None,
-	"[{}]",
-	None,
+	name    = "constant",
+	formula = "a0",
+	pnames  = ["a0"],
+	model_function   = lambda x,c:x*0+c,
+	i_model_function = None,
+	parameter_guess_function    = lambda x,y,bounds:[y.mean()],
+	input_validation_function   = None,
+	i_input_validation_function = None,
+	root_function_template      = "{p[0]}",
+	i_root_function_template    = None,
 )
 poly0 = constant
 mono0 = constant
+
 
 def line_guess(x,y,bounds):
 	dx = x[-1] - x[0]
@@ -438,16 +464,18 @@ def line_guess(x,y,bounds):
 	a0 = y[0] - a1*x[0]
 	return [a1,a0]
 line = function_archetype(
-	"line",
-	"a0 + a1*x",
-	["a1", "a0"],
-	lambda x,a1,a0:a0+x*a1,
-	lambda y,a1,a0:(y-a0)/a1,
-	line_guess,
-	None,
-	None,
-	"[{1}] + [{0}]*x",
-	"(x-[{1}])/[{0}]",
+	name    = "line",
+	formula = "a0 + a1*x",
+	pnames  = ["a1", "a0"],
+	model_function   = lambda x,a1,a0:a0+x*a1,
+	i_model_function = lambda y,a1,a0:(y-a0)/a1,
+	parameter_guess_function    = line_guess,
+	input_validation_function   = None,
+	i_input_validation_function = None,
+	root_function_template      = "{p[1]} + {p[0]}*{x}",
+	i_root_function_template    = "({x}-{p[1]})/{p[0]}",
+	# i_root_function_template    = "[{1}] + [{0}]*x",
+	# i_input_validation_function = "(x-[{1}])/[{0}]",
 )
 poly1 = line
 
@@ -458,16 +486,18 @@ def quadratic_guess(x,y,bounds):
 	a0 = y[0] - a1*x[0]
 	return [0.0,a1,a0]
 quadratic = function_archetype(
-	"quadratic",
-	"a0 + a1*x + a2*x**2",
-	["a2","a1","a0"],
-	lambda x,a2,a1,a0:a0+x*a1+(x**2)*a2,
-	lambda y,a2,a1,a0:(-a1 + np.sqrt(a1**2 - 4*a2*(a0-y)))/(2*a2),
-	quadratic_guess,
-	always_true,
-	lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
-	"[{2}] + [{1}]*x + [{0}]*x**2",
-	"(-[{1}] + sqrt([{1}]**2 - 4*[{0}]*([{2}]-x)))/(2*[{0}])",
+	name    = "quadratic",
+	formula = "a0 + a1*x + a2*x**2",
+	pnames  = ["a2","a1","a0"],
+	model_function   = lambda x,a2,a1,a0:a0+x*a1+(x**2)*a2,
+	i_model_function = lambda y,a2,a1,a0:(-a1 + np.sqrt(a1**2 - 4*a2*(a0-y)))/(2*a2),
+	parameter_guess_function    = quadratic_guess,
+	input_validation_function   = always_true,
+	i_input_validation_function = lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
+	root_function_template      = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
+	i_root_function_template    = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
+	# root_function_template      = "[{2}] + [{1}]*x + [{0}]*x**2",
+	# i_root_function_template    = "(-[{1}] + sqrt([{1}]**2 - 4*[{0}]*([{2}]-x)))/(2*[{0}])",
 )
 poly2 = quadratic
 quad = quadratic
@@ -475,31 +505,35 @@ quad = quadratic
 def powerlaw_guess(x,y,bounds):
 	return [y.max() / x.max(), 1.0]
 powerlaw = function_archetype(
-	"powerlaw",
-	"b*x^m",
-	["b","m"],
-	lambda x,b,m:np.power(x,m)*b,
-	lambda y,b,m:np.power(y/b, 1/m),
-	powerlaw_guess,
-	lambda x,b,m:x > 0,
-	lambda y,b,m:y/b > 0,
-	"[{0}]*(x**[{1}])",
-	"(x/[{0}])**(1/[{1}])",
+	name    = "powerlaw",
+	formula = "b*x^m",
+	pnames  = ["b","m"],
+	model_function   = lambda x,b,m:np.power(x,m)*b,
+	i_model_function = lambda y,b,m:np.power(y/b, 1/m),
+	parameter_guess_function    = powerlaw_guess,
+	input_validation_function   = lambda x,b,m:x > 0,
+	i_input_validation_function = lambda y,b,m:y/b > 0,
+	root_function_template      = "{p[0]}*({x}**{p[1]})",
+	i_root_function_template    = "({x}/{p[0]})**(1/{p[1]})",
+	# root_function_template      = "[{0}]*(x**[{1}])",
+	# i_root_function_template    = "(x/[{0}])**(1/[{1}])",
 )
 
 def powerlaw_plus_constant_guess(x,y,bounds):
 	return [y.max() / x.max(), 1.0, 0.0]
 powerlaw_plus_constant = function_archetype(
-	"powerlaw+constant",
-	"b*x^m+c",
-	["b","m","c"],
-	lambda x,b,m,c:np.power(x,m)*b+c,
-	lambda y,b,m,c:np.power((y-c)/b, 1/m),
-	powerlaw_guess,
-	lambda x,b,m,c:x > 0,
-	lambda y,b,m,c:(y-c)/b > 0,
-	"[{0}]*(x**[{1}])+[{2}]",
-	"((x-[{2}])/[{0}])**(1/[{1}])",
+	name    = "powerlaw+constant",
+	formula = "b*x^m+c",
+	pnames  = ["b","m","c"],
+	model_function   = lambda x,b,m,c:np.power(x,m)*b+c,
+	i_model_function = lambda y,b,m,c:np.power((y-c)/b, 1/m),
+	parameter_guess_function    = powerlaw_guess,
+	input_validation_function   = lambda x,b,m,c:x > 0,
+	i_input_validation_function = lambda y,b,m,c:(y-c)/b > 0,
+	root_function_template      = "{p[0]}*({x}**{p[1]})+{p[2]}",
+	i_root_function_template    = "(({x}-{p[2]})/{p[0]})**(1/{p[1]})",
+	# root_function_template      = "[{0}]*(x**[{1}])+[{2}]",
+	# i_root_function_template    = "((x-[{2}])/[{0}])**(1/[{1}])",
 )
 powc = powerlaw_plus_constant
 
@@ -515,16 +549,16 @@ def gaussian_guess(x,y,bounds):
 	sigma_guess = 0.5 * (min([mu_bounds[1],x.max()]) - max([mu_bounds[0],x.min()]))
 	return [c_guess, mu_guess, sigma_guess]
 gaussian = function_archetype(
-	"gaussian",
-	"c*exp(-(x-mu)**2/(2*sigma**2))",
-	["c","mu","sigma"],
-	lambda x, c, mu, sigma:c*np.exp(-0.5*((x-mu)/sigma)**2),
-	None,
-	gaussian_guess,
-	None,
-	None,
-	"gaus({0})",
-	None,
+	name    = "gaussian",
+	formula = "c*exp(-(x-mu)**2/(2*sigma**2))",
+	pnames  = ["c","mu","sigma"],
+	model_function   = lambda x, c, mu, sigma:c*np.exp(-0.5*((x-mu)/sigma)**2),
+	i_model_function = None,
+	parameter_guess_function    = gaussian_guess,
+	input_validation_function   = None,
+	i_input_validation_function = None,
+	root_function_template      = "{p[0]}*exp(-0.5*(({x}-{p[1]})/{p[2]})**2)",
+	i_root_function_template    = None,
 )
 gaus=gaussian
 norm=gaussian
@@ -538,12 +572,11 @@ normal=gaussian
 shorthand = {
 	"p":powerlaw,
 	"e":exponential,
-	"E":exponential_local,
+	# "E":exponential_local,
 	"c":constant,
 	"l":line,
 	"q":quadratic,
 	"g":gaussian,
-	# "x":gaussian,
 	"s":suppressed_monomial,
 }
 
