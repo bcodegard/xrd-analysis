@@ -11,8 +11,6 @@ import sys
 import os
 import math
 import argparse
-import itertools
-import ROOT
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -22,7 +20,6 @@ import utils.display as display
 import utils.model   as model
 
 
-GLOBAL_DOWNSCALE = 1e3
 
 
 # filesystem locations
@@ -36,6 +33,7 @@ RESULT_LOC = "./data/fits/{}.csv"
 EXT_ROOT = ".root"
 EXT_CSV  = ".csv"
 EXT_PNG  = ".png"
+EXT_NPZ  = ".npz"
 
 # delimiters for argparse
 AP_DELIMITER = ","
@@ -142,7 +140,7 @@ def csv_format_cuts(cuts):
 
 
 # main
-def main(args):
+def main(args, suspend_show=False, colors={}):
 
 
 	# stage 0: args
@@ -154,9 +152,10 @@ def main(args):
 		run = DATA_LOC.format(run_id)
 	except:
 		run = args["run"]
-		if not run.endswith(EXT_ROOT):
+		if not (run.endswith(EXT_ROOT) or run.endswith(EXT_NPZ)):
 			run += EXT_ROOT
-		run_id = int(run.rpartition(os.sep)[2].partition(EXT_ROOT)[0][3:])
+		which_ext = '.'+run.rpartition('.')[2]
+		run_id = int(run.rpartition(os.sep)[2].partition(which_ext)[0][3:])
 		# todo: better extraction of run#. Will fail if filename format changes.
 		# could also switch to using full filename instead of ID in calibration entries.
 
@@ -203,23 +202,13 @@ def main(args):
 	xlog = args["xlog"]
 	ylog = args["ylog"]
 	show = args["show"]
+	label = args["label"]
+	label_suffix=", {}".format(label) if label else ""
 
 	# output args
 	file_out = args["out"]
 	fig_out  = args["fig"]
 	verbosity = args["v"]
-
-
-	# --dr
-	if args["dr"]:
-		dr = True
-		dr_lo, dr_hi = split_with_defaults(args["dr"],[0.0,1.0],[float,float])
-	else:
-		dr = False
-		dr_lo, dr_hi = 0,1
-
-	# xfout
-	xfout = args["xfout"]
 
 	# print raw and processed args if verbosity >= 2
 	if verbosity >= 2:
@@ -256,7 +245,14 @@ def main(args):
 	# load data
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
-	branches = fileio.load_branches(run, branches_needed)
+
+	if run.endswith(EXT_ROOT):
+		branches = fileio.load_branches(run, branches_needed)
+	else:
+		# print([_ for _ in np.load(run).keys()])
+		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed}
+		# print(branches.keys())
+
 	if verbosity:
 		print("loaded branches: {}".format(branches_needed))
 		print("shapes: {}".format([_.shape for _ in branches.values()]))
@@ -401,8 +397,6 @@ def main(args):
 	del filters
 	del branches
 
-	# apply downscale
-	fit_data /= GLOBAL_DOWNSCALE
 
 	# stage 2: fit
 	# bin fit_data
@@ -421,12 +415,7 @@ def main(args):
 	# no need to assess min/max values since fit_data alreayd has cuts applied
 	edges = np.linspace(fit_data.min(), fit_data.max(), nbins + 1)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
-	if dr:
-		ir_lo = math.floor(dr_lo * (fit_data.shape[0] - 1))
-		ir_hi = math.floor(dr_hi * (fit_data.shape[0] - 1))
-		counts, edges = np.histogram(fit_data[ir_lo:ir_hi], edges)
-	else:
-		counts, edges = np.histogram(fit_data, edges)
+	counts, edges = np.histogram(fit_data, edges)
 
 	# list of components for fit model
 	fit_model_components = []
@@ -456,9 +445,9 @@ def main(args):
 
 	# add suppressed monomials
 	for ism,sm in enumerate(smono):
-		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]]]
+		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
 		order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
-		fit_model_components.append(model.smono(this_bounds, [sm[0]]))
+		fit_model_components.append(model.smono(this_bounds))
 
 	# compose model
 	if len(fit_model_components):
@@ -469,153 +458,7 @@ def main(args):
 		raise ValueError(ERR_NO_FIT_MODEL)
 
 	# fit the binned data
-	# popt, perr, chi2, ndof = fit_model.fit(midpoints, counts)
-
-	hi_rs   = [np.inf,np.inf,100000.0,np.inf,np.inf,260000.0,np.inf,np.inf,375000.0,np.inf,np.inf,520000.0,np.inf,np.inf,640000.0,np.inf,np.inf,680000.0,np.inf,np.inf,np.inf]
-	lo_rs   = [-np.inf,0.0,85000.0,0.0,0.0,225000.0,0.0,0.0,340000.0,0.0,0.0,440000.0,0.0,0.0,560000.0,0.0,0.0,650000.0,0.0,0.0,-np.inf]
-	popt_rs = [1.681,86.803,93459.792,8536.231,49.358,243750.235,11386.371,65.788,357405.705,13452.823,22.471,474836.311,67533.321,16.68,608209.665,35331.345,20.651,666866.604,7990.784,154605.676,219.469]
-
-	for ip,pname in enumerate(fit_model.pnames):
-		if pname in ["mu", "sigma", "xpeak", ]:
-			popt_rs[ip] /= GLOBAL_DOWNSCALE
-
-	popt_rs_mu    = itertools.cycle([_ for i,_ in enumerate(popt_rs) if fit_model.pnames[i] == "mu"])
-	popt_rs_xpeak = itertools.cycle([_ for i,_ in enumerate(popt_rs) if fit_model.pnames[i] == "xpeak"])
-	print([_ for i,_ in enumerate(popt_rs) if fit_model.pnames[i] == "mu"])
-	print([_ for i,_ in enumerate(popt_rs) if fit_model.pnames[i] == "xpeak"])
-
-	xfo = 2
-	if xfo == 2:
-		TEMPLATE_XF = "[0] + [1]*{0} + [2]*{0}**2"
-		xf_npars = 3
-		xf_fn = lambda x,*c:c[0] + c[1]*x + c[2]*x**2
-	elif xf0 == 1:
-		TEMPLATE_XF = "[0] + [1]*{}"
-		xf_npars = 2
-		xf_fn = lambda x,*c:c[0] + c[1]*x
-	TEMPLATE_GAUS  = "[{0}]*exp(-0.5*((x-({xf}))/[{1}])**2)"
-	TEMPLATE_SMONO = "[{0}]*(({s[0]}*x/({xf}))**{s[0]})*exp(-{s[0]}*x/({xf}))"
-
-	istart = xf_npars
-	ipref  = 0
-	scale_fit_components = []
-	pguess = [0.0, 1.0, 0.0][:xf_npars]
-	hi     = [ (1e5)/GLOBAL_DOWNSCALE, 2.0, 0.1][:xf_npars]
-	lo     = [-(1e5)/GLOBAL_DOWNSCALE, 0.5,-0.1][:xf_npars]
-	for ic,component in enumerate(fit_model_components):
-		if component.arch is model.gaus:
-			this_mu = next(popt_rs_mu)
-			this_component = TEMPLATE_GAUS.format(
-				*range(istart,istart+2),
-				# xf=TEMPLATE_XF.format(this_mu,this_mu),
-				xf=TEMPLATE_XF.format(this_mu),
-				)
-			pguess += [popt_rs[ipref], popt_rs[ipref+2]]
-			hi     += [  hi_rs[ipref],   hi_rs[ipref+2]]
-			lo     += [  lo_rs[ipref],   lo_rs[ipref+2]]
-			istart += 2
-		elif component.arch is model.smono:
-			this_xpeak = next(popt_rs_xpeak)
-			this_component = TEMPLATE_SMONO.format(
-				istart,
-				# xf=TEMPLATE_XF.format(this_xpeak,this_xpeak),
-				xf=TEMPLATE_XF.format(this_xpeak),
-				s=component.static_parameters,
-				)
-			pguess += [popt_rs[ipref+1]]
-			hi     += [  hi_rs[ipref+1]]
-			lo     += [  lo_rs[ipref+1]]
-			istart += 1
-		else:
-			this_component = component.rfs(istart)
-			pguess += popt_rs[ipref:ipref+component.npars]
-			hi     +=   hi_rs[ipref:ipref+component.npars]
-			lo     +=   lo_rs[ipref:ipref+component.npars]
-			istart += component.npars
-		ipref += component.npars
-		print(this_component)
-		scale_fit_components.append(this_component)
-	print("")
-	print(pguess)
-	print(hi)
-	print(lo)
-	print("")
-	scale_fit = " + ".join(scale_fit_components)
-
-	print("\n".join(scale_fit_components))
-	print("")
-	print(scale_fit)
-	print("")
-
-	# root object initialization and fit
-	xdata = midpoints
-	ydata = counts
-	rf = ROOT.TF1("multifit",scale_fit,0.0,1.0)
-	ndata = xdata.shape[0]
-	hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
-	for j in range(ndata):
-		hist.SetBinContent(j+1, ydata[j])
-	for i,_ in enumerate(pguess):
-		rf.SetParameter(i,_)
-	for ip in range(len(lo)): # set bounds on root parameters
-		this_lo, this_hi = lo[ip], hi[ip]
-		if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
-		if this_hi ==  np.inf:this_hi= 1e7 # 
-		rf.SetParLimits(ip, this_lo, this_hi)
-	hist.Fit(rf,"N")
-	par = rf.GetParameters()
-	err = rf.GetParErrors()
-	popt_xf = [par[_] for _ in range(len(pguess))]
-	perr_xf = [err[_] for _ in range(len(pguess))]
-	chi2 = rf.GetChisquare()
-	ndof = rf.GetNDF()
-
-	# popt_xf = pguess
-	# perr_xf = [-1]*len(pguess)
-	# chi2 = 666
-	# ndof = 666
-
-	print(popt_xf)
-
-	# translate to parameters for original model
-	popt = []
-	istart = xf_npars
-	coeff = popt_xf[:xf_npars]
-	for ic,component in enumerate(fit_model_components):
-		if component.arch is model.gaus:
-			this_rs_mu = next(popt_rs_mu)
-			popt += [
-				popt_xf[istart],
-				xf_fn(this_rs_mu, *coeff),
-				popt_xf[istart+1],
-			]
-			istart += 2
-		elif component.arch is model.smono:
-			this_rs_xpeak = next(popt_rs_xpeak)
-			popt += [
-				xf_fn(this_rs_xpeak, *coeff),
-				popt_xf[istart],
-			]
-			istart += 1
-		else:
-			popt += popt_xf[istart:istart+component.npars]
-			istart += component.npars
-
-	# save xf deets
-	if xfout:
-		file = "./data/xf/{}.csv".format(xfout)
-		this_entry = [
-			run,
-			*fit,
-			dr_lo,
-			dr_hi,
-			xf_npars,
-			*popt_xf[:xf_npars],
-			*perr_xf[:xf_npars],
-		]
-		fileio.update_csv(file, this_entry, [str,str,float,float,float,float,int,float], 0)
-	
-	# display fit results
+	popt, perr, chi2, ndof, cov = fit_model.fit(midpoints, counts, need_cov = True)
 	if verbosity:
 		line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
 		print("")
@@ -626,15 +469,23 @@ def main(args):
 			))
 		print("model parameters")
 		print(line_template.format("f","par","lo bnd","hi bnd","popt","perr"))
-		for ip,p in enumerate(popt_xf):
-			print(line_template.format(
-				0,
-				ip,
-				round(lo[ip],DISPLAY_PRECISION),
-				round(hi[ip],DISPLAY_PRECISION),
-				round(popt_xf[ip],DISPLAY_PRECISION),
-				round(perr_xf[ip],DISPLAY_PRECISION),
-			))
+		ipar = 0
+		for ic,component in enumerate(fit_model_components):
+			for ip,pname in enumerate(component.pnames):
+				print(line_template.format(
+					ic,
+					pname,
+					round(component.bounds[ip][0],DISPLAY_PRECISION),
+					round(component.bounds[ip][1],DISPLAY_PRECISION),
+					round(popt[ipar],DISPLAY_PRECISION),
+					round(perr[ipar],DISPLAY_PRECISION),
+				))
+				ipar += 1
+		if verbosity >= 2:
+			print("\nfull covariance matrix")
+			print(cov)
+		print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
+		print(np.sqrt(np.diag(cov)))
 
 
 	# stage 3: display and output
@@ -644,23 +495,14 @@ def main(args):
 
 	# if showing or saving the figure, we need to compose it
 	if show or fig_out:
-
-		if xlog and ylog:
-			plotter = plt.loglog
-		elif xlog:
-			plotter = plt.semilogx
-		elif ylog:
-			plotter = plt.semilogy
-		else:
-			plotter = plt.plot
 		
 		# display data
 		if "d" in display:
-			plotter(midpoints, counts, "k.", label="data")
+			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="data{}".format(label_suffix))
 
 		# display root result
 		if "r" in display:
-			plotter(midpoints, fit_model(midpoints,*popt), "g-", label="fit")
+			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
 		# # display root result +- errors
 		# if "e" in display:
@@ -672,7 +514,7 @@ def main(args):
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
 					par = popt[ip]
-					stat_err = -1.0 # perr[ip]
+					stat_err = perr[ip]
 
 					if model_id == -1:
 						label_center = "{}={}\xb1{}".format(
@@ -692,10 +534,10 @@ def main(args):
 					# display statistical errors
 					if "e" in display:
 						label_error = "\xb1stat err" if first_peak else None
-						plt.axvline(popt[ip]+perr[ip], ls='--', color='r', label=label_error)
-						plt.axvline(popt[ip]-perr[ip], ls='--', color='r', )
+						plt.axvline(popt[ip]+perr[ip], ls='--', color=colors.get("pe","r"), label=label_error)
+						plt.axvline(popt[ip]-perr[ip], ls='--', color=colors.get("pe","r"), )
 
-					plt.axvline(popt[ip], ls='--', color='darkred', label=label_center)
+					plt.axvline(popt[ip], ls='--', color=colors.get("p","darkred"), label=label_center)
 
 					first_peak = False
 
@@ -712,6 +554,12 @@ def main(args):
 			rfs=fit_model.rfs(),
 		))
 
+		# apply axis scaling
+		if xlog:
+			plt.xscale("log")
+		if ylog:
+			plt.yscale("log")
+		
 	# save the figure if specified
 	if fig_out:
 		
@@ -726,7 +574,8 @@ def main(args):
 
 	# show the figure if requested
 	if show:
-		plt.show()
+		if not suspend_show:
+			plt.show()
 
 	# save details to a csv file if requested
 	if file_out:
@@ -736,6 +585,12 @@ def main(args):
 			csv_file = RESULT_LOC.format(file_out)
 		else:
 			csv_file = file_out
+
+		# todo: use fit_result class during whole script
+		#       then just use this_contents = result.pack()
+		# 
+		#       if changing to have model classes handle results,
+		#       then do contents = fit_model.pack()
 
 		# compose new entry
 		this_contents = [
@@ -752,8 +607,9 @@ def main(args):
 			int(raw_bounds), # whether bounds are specified on untransformed data
 
 			# fit routine input
-			# todo- automatically pack components with archetype,parameters,static etc
+			# todo: automatically pack components with archetype,parameters,static etc
 			#       none of this case-by-case nonsense
+			#       this can be handled better by the model class itself.
 			nbins, # number of bins used (copies atuo bin count)
 			background if background else "-", # background function
 			len(gaus), # number of gaussians
@@ -814,15 +670,67 @@ if __name__ == '__main__':
 	parser.add_argument("-x",dest="xlog",action="store_true",help="sets x axis of figure to log scale")
 	parser.add_argument("-y",dest="ylog",action="store_true",help="sets y axis of figure to log scale")
 	parser.add_argument("-s",dest="show",action="store_false",help="don't show figure as pyplot window")
+	parser.add_argument("--l",type=str,default="",dest='label',help="custom label")
 
 	# output arguments
 	parser.add_argument("--out",type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
 	parser.add_argument("-v",action='count',default=0,help="verbosity")
 
-	# reference spectrum related arguments
-	parser.add_argument("--dr",type=str,default="")
-	parser.add_argument("--xfout",type=str,default="")
+	ARG_MULTI = "AND"
 
-	args = vars(parser.parse_args())
-	main(args)
+	# indicates multiple argument sets -> multiple plots, put on same plot
+	if ARG_MULTI in sys.argv:
+
+		# todo better color handling
+		# todo better label/legend handling
+		# todo better axis labels and title handling
+		# todo better display axis bounds handling
+
+		# list of complete argument sets
+		arg_sets = []
+		
+		# current argument set being constructed
+		this_set = []
+
+		# iterate through argv
+		for a in sys.argv[1:]:
+
+			# delimiter
+			if a == ARG_MULTI:
+
+				# add current set to list of complete sets
+				arg_sets.append(this_set)
+
+				# reset current set
+				this_set = []
+
+			# not delimiter
+			else:
+				# add to current set
+				this_set.append(a)
+
+		# add last set to list of complete sets
+		arg_sets.append(this_set)
+
+
+		COLOR_SEQ = "kmbrcy"
+		
+		# call main with each set of arguments in turn,
+		# additionally communicating that each call is
+		# part of a multi-call execution
+		for i,arg_set in enumerate(arg_sets):
+			this_args = vars(parser.parse_args(arg_set))
+			main(
+				this_args,
+				suspend_show = True,
+				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
+			)
+
+		# show figure with all calls' data
+		plt.show()
+
+	# single call
+	else:
+		args = vars(parser.parse_args())
+		main(args)

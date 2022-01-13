@@ -82,7 +82,7 @@ def fit_hist_with_root(
 		need_cov=False,
 		):
 	"""performs a root fit on xdata,ydata assuming poisson errors"""
-	
+
 	# get bounds into format expected
 	lo = [_[0] for _ in bounds]
 	hi = [_[1] for _ in bounds]

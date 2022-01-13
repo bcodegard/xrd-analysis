@@ -314,18 +314,74 @@ def get_best_calibration(calib, branch, voltage, run, model_id, ard=False):
 
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
 class fit_result(object):
-	def __init__(self, contents):
-		self.load_from_contents(contents)
+	"""holds properties of fit parameters and result in convenient form"""
+
+	# todo: support covariance matrix
+	# 
+	# todo: add functions for modifying top-level attributes
+	#       which automatically manage low-level attributes
+	#       Eg: add a component -> update ngaus, names, bounds, indices, etc.
+	# 
+	# todo: some or all of this functionality could be absorbed by model class itself
+	#       for instance, components and bounds are already contained by model class
+	#       perhaps model class could have storage for results (chi2,dof,popr,perr,cov)
+	#       and fileio would just have pack and unpack functions (not a class.)
+	#       
+	#       actually, the model module could have a function which creates a populated
+	#       model_multiple class from a CSV row, and one which does the reverse,
+	#       and fileio would only have to handle CSV loading and saving.
+	#       that seems like the best way to do it.
+
+	def __init__(self, contents=False):
+		if contents:
+			self.unpack(contents)
+
+	def pack(self):
+		"""generate list for CSV entry from self attributes"""
+
+		...
+
+		# # code pasted from fitBranch
+		# # will need to be changed to use correct properties
+		# # not needed yet, so don't bother, since this functionality
+		# # will likely be absorbed by model class (see above)
+
+		# this_contents = [
+
+		# 	# fit data
+		# 	run_id, # numerical ID of run
+		# 	fit[0], # branch fit
+		# 	fit[1], # branch fit lo cut
+		# 	fit[2], # branch fit hi cut
+
+		# 	# model info
+		# 	model_id, # numerical ID of model
+		# 	model_cal_file if model_cal_file else "-", # calibration file used
+		# 	int(raw_bounds), # whether bounds are specified on untransformed data
+
+		# 	nbins, # number of bins used (copies atuo bin count)
+		# 	background if background else "-", # background function
+		# 	len(gaus), # number of gaussians
+		# 	*csv_format_gaus(gaus), # name,*bounds per gaussian, flattened
+		# 	len(smono),
+		# 	*csv_format_smono(smono),
+			
+		# 	# cut data
+		# 	len(cuts), # number of cuts
+		# 	*csv_format_cuts(cuts), # br,lo,hi per cut, flattened
+
+		# 	# results
+		# 	chi2,
+		# 	ndof,
+		# 	n_bg_parameters,
+		# 	*popt,
+		# 	*perr,
+
+		# ]
 
 	def unpack(self, contents):
 		"""parses contents of CSV entry and sets self attripbutes to match"""
-		...
 
-	def pack(self):
-		"""generate CSV entry from self attributes"""
-		...
-
-	def load_from_contents(self, contents):
 		if contents is None:
 			return
 

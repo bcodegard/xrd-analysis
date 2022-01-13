@@ -586,6 +586,12 @@ def main(args, suspend_show=False, colors={}):
 		else:
 			csv_file = file_out
 
+		# todo: use fit_result class during whole script
+		#       then just use this_contents = result.pack()
+		# 
+		#       if changing to have model classes handle results,
+		#       then do contents = fit_model.pack()
+
 		# compose new entry
 		this_contents = [
 
@@ -601,8 +607,9 @@ def main(args, suspend_show=False, colors={}):
 			int(raw_bounds), # whether bounds are specified on untransformed data
 
 			# fit routine input
-			# todo- automatically pack components with archetype,parameters,static etc
+			# todo: automatically pack components with archetype,parameters,static etc
 			#       none of this case-by-case nonsense
+			#       this can be handled better by the model class itself.
 			nbins, # number of bins used (copies atuo bin count)
 			background if background else "-", # background function
 			len(gaus), # number of gaussians
