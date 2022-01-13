@@ -5,19 +5,22 @@ don't actually use this for anything else
 
 import numpy
 import math
+import sys
 import numpy as np
 
 import utils.model as model
 import matplotlib.pyplot as plt
 
-test_fitting = False
+test_fitting = True
 if test_fitting:
 
 	test_model = model.line() + model.gaus([None,[5,7],None])
-	true_par = [3000,-30,250,6,1]
+	true_par = [30,270,250,6,1]
 
 	xdata = np.linspace(0,10,250)
-	ydata = np.random.poisson(test_model(xdata, *true_par))
+	ytrue = test_model(xdata, *true_par)
+	# print(ytrue.min(), ytrue.max(), list(ytrue))
+	ydata = np.random.poisson(ytrue)
 
 	popt, perr, chi2, ndof = test_model.fit(xdata, ydata)
 	print(popt)
@@ -28,7 +31,9 @@ if test_fitting:
 	plt.title("chisq/dof = {}/{} = {}".format(round(chi2,3), ndof, round(chi2/ndof,3)))
 	plt.show()
 
-test_multiple_functions = False
+	print("test_fitting finished without errors")
+
+test_multiple_functions = True
 if test_multiple_functions:
 
 	e = model.exponential()
@@ -51,12 +56,12 @@ if test_multiple_functions:
 	print(pe.rfs(4))
 
 	print("\nfunction calls")
-	print(ec(5, [3,0,6]))
-	print(ec(1, [20,1,50]))
-	print(el(2, [1,1,5,10]))
-	print(eec(3, [1,1,4,0.2,5]))
-	print(qe(5, [10, 1, 1, 3, 1/5.]))
-	print(pe(2, [2,3.5,1,4,1]))
+	print( ec(5, *[3,0,6]))
+	print( ec(1, *[20,1,50]))
+	print( el(2, *[1,1,5,10]))
+	print(eec(3, *[1,1,4,0.2,5]))
+	print( qe(5, *[10, 1, 1, 3, 1/5.]))
+	print( pe(2, *[2,3.5,1,4,1]))
 
 	print("\nguess calls")
 	test_x = np.linspace(3,4,100)
@@ -69,14 +74,16 @@ if test_multiple_functions:
 	print("\nvalidation calls")
 	test_x_pos  = np.linspace(1,2,5)
 	test_x_neg  = np.linspace(-1,-2,5)
-	print(qe.val(test_x_pos, [1,1,1,-1,-1]))
-	print(qe.val(test_x_pos, [1,1,1,-1, 1]))
-	print(qe.val(test_x_neg, [1,1,1, 1,-1]))
-	print(qe.val(test_x_neg, [1,1,1, 1, 1]))
-	print(pe.val(test_x_pos, [1, 2,1,1,1]))
-	print(pe.val(test_x_pos, [1,-2,1,1,1]))
-	print(pe.val(test_x_neg, [1, 2,1,1,1]))
-	print(pe.val(test_x_neg, [1,-2,1,1,1]))
+	print(qe.val(test_x_pos, *[1,1,1,-1,-1]))
+	print(qe.val(test_x_pos, *[1,1,1,-1, 1]))
+	print(qe.val(test_x_neg, *[1,1,1, 1,-1]))
+	print(qe.val(test_x_neg, *[1,1,1, 1, 1]))
+	print(pe.val(test_x_pos, *[1, 2,1,1,1]))
+	print(pe.val(test_x_pos, *[1,-2,1,1,1]))
+	print(pe.val(test_x_neg, *[1, 2,1,1,1]))
+	print(pe.val(test_x_neg, *[1,-2,1,1,1]))
+
+	print("test_multiple_functions finished without errors")
 
 test_individual_functions = True
 if test_individual_functions:
@@ -153,3 +160,7 @@ if test_individual_functions:
 		print(m.irfs_custom(x="x/[0] - 1", p=1))
 		print(m.irfs_custom(x="x/[0] - 1", p=[3.5]*m.npars))
 
+	print("test_individual_functions finished without errors")
+
+print("all enabled tests finished without errors")
+sys.exit(0)

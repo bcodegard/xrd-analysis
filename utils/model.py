@@ -20,60 +20,78 @@ NO_BOUNDS = [-np.inf, np.inf]
 
 
 def fit_graph_with_root(
-		model,
+		func,
 		xdata,
 		ydata,
 		xerr,
 		yerr,
+		bounds,
+		p0,
+		rfs,
+		need_cov=False,
 		):
 	"""	performs a root fit on xdata,ydata with specified errors"""
 
 	# get bounds into format expected
-	lo = [_[0] for _ in model.bounds]
-	hi = [_[1] for _ in model.bounds]
+	lo = [_[0] for _ in bounds]
+	hi = [_[1] for _ in bounds]
 
 	# scipy fit for parameter guess input to root fit
 	# no need for errors, as this is just used as a guess by root
-	p0 = model.guess(xdata, ydata)
-	popt, pcov = opt.curve_fit(model, xdata, ydata, p0, bounds=[lo,hi])
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
 
 	# initialize TGraphErrors
 	n_points = len(xdata)
 	graph = ROOT.TGraphErrors(n_points, xdata, ydata, xerr, yerr)
 
 	# initialize and fit TF1
-	rf = ROOT.TF1("multifit",model.rfs(),0.0,1.0)
+	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
 	rf.SetParameters(*popt)
-	graph.Fit(rf, "N")
+	fitResult = graph.Fit(rf,"NS" if need_cov else "N")
 
 	# extract results
 	par = rf.GetParameters()
 	err = rf.GetParErrors()
-	popt_root = [par[_] for _ in range(model.npars)]
-	perr_root = [err[_] for _ in range(model.npars)]
+	popt_root = [par[_] for _ in range(len(p0))]
+	perr_root = [err[_] for _ in range(len(p0))]
 	chi2 = rf.GetChisquare()
 	ndof = rf.GetNDF()
-	
-	# return results
-	return np.array(popt_root), np.array(perr_root), chi2, ndof
+
+	results = (np.array(popt_root), np.array(perr_root), chi2, ndof)
+
+	if need_cov:
+		cov = fitResult.GetCovarianceMatrix()
+		nr = cov.GetNrows()
+		nc = cov.GetNcols()
+
+		cov_mtx_ptr = cov.GetMatrixArray()
+
+		cov_arr = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
+
+		results = results + (cov_arr, )
+
+	return results
 
 def fit_hist_with_root(
-		model,
+		func,
 		xdata,
 		ydata,
+		bounds,
+		p0,
+		rfs,
+		need_cov=False,
 		):
-	"""	performs a root fit on xdata,ydata assuming poisson errors"""
+	"""performs a root fit on xdata,ydata assuming poisson errors"""
 	
 	# get bounds into format expected
-	lo = [_[0] for _ in model.bounds]
-	hi = [_[1] for _ in model.bounds]
+	lo = [_[0] for _ in bounds]
+	hi = [_[1] for _ in bounds]
 
 	# scipy fit for parameter guess input to root fit
-	p0 = model.guess(xdata, ydata)
-	popt, pcov = opt.curve_fit(model, xdata, ydata, p0, bounds=[lo,hi])
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
 
 	# root object initialization and fit
-	rf = ROOT.TF1("multifit",model.rfs(),0.0,1.0)
+	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
 	ndata = xdata.shape[0]
 	hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
 	for j in range(ndata):
@@ -84,15 +102,29 @@ def fit_hist_with_root(
 		if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
 		if this_hi ==  np.inf:this_hi= 1e7 # 
 		rf.SetParLimits(ip, this_lo, this_hi)
-	hist.Fit(rf,"N")
+	fitResult = hist.Fit(rf,"NS" if need_cov else "N")
 	par = rf.GetParameters()
 	err = rf.GetParErrors()
-	popt_root = [par[_] for _ in range(model.npars)]
-	perr_root = [err[_] for _ in range(model.npars)]
+	popt_root = [par[_] for _ in range(len(p0))]
+	perr_root = [err[_] for _ in range(len(p0))]
 	chi2 = rf.GetChisquare()
 	ndof = rf.GetNDF()
-	
-	return np.array(popt_root), np.array(perr_root), chi2, ndof
+
+	results = (np.array(popt_root), np.array(perr_root), chi2, ndof)
+
+	if need_cov:
+		cov = fitResult.GetCovarianceMatrix()
+		nr = cov.GetNrows()
+		nc = cov.GetNcols()
+
+		cov_mtx_ptr = cov.GetMatrixArray()
+
+		cov_arr = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
+
+		results = results + (cov_arr, )
+
+	return results
+
 
 
 
@@ -148,12 +180,12 @@ class function_archetype(object):
 		self.root_function_template   = root_function_template
 		self.i_root_function_template = i_root_function_template
 
-	def __call__(self, bounds=None, static_parameters=[]):
+	def __call__(self, bounds=None):
 		if bounds is None:
 			bounds = [NO_BOUNDS]*self.npars
 		else:
 			bounds = [_ if _ is not None else NO_BOUNDS for _ in bounds]
-		return model_single(self, bounds, static_parameters)
+		return model_single(self, bounds)
 
 
 
@@ -167,12 +199,12 @@ ERR_NO_IRFS = "function {} has no inverse root function template defined"
 class model_single(object):
 	""""""
 
-	def __init__(self, arch, bounds=None, static_parameters=[]):
+	# TODO model_single is just model_multiple with one component
+	# Can use one class instead of two?
+
+	def __init__(self, arch, bounds=None):
 		self.arch       = arch
 		self.bounds     = bounds
-
-		# dev
-		self.static_parameters = static_parameters
 
 		# properties copied from arch
 		self.name    = arch.name
@@ -181,10 +213,7 @@ class model_single(object):
 		self.npars   = arch.npars
 
 	def __call__(self, x, *parameters):
-		if self.static_parameters:
-			return self.fn(x,*parameters[:self.npars],*self.static_parameters)
-		else:
-			return self.fn(x,*parameters[:self.npars])
+		return self.fn(x,*parameters[:self.npars])
 
 	def __add__(self, other):
 		if type(other) is model_single:
@@ -193,20 +222,17 @@ class model_single(object):
 			return model_multiple([self, *other.components])
 
 	def fn(self, x, *parameters):
-		return self.arch.model_function(x,*parameters[:self.npars],*self.static_parameters)
+		return self.arch.model_function(x,*parameters[:self.npars])
 	def ifn(self, y, *parameters):
-		return self.arch.i_model_function(y,*parameters[:self.npars],*self.static_parameters)
+		return self.arch.i_model_function(y,*parameters[:self.npars])
 
 	def val(self, x, *parameters):
-		return self.arch.input_validation_function(x,*parameters[:self.npars],*self.static_parameters)
+		return self.arch.input_validation_function(x,*parameters[:self.npars])
 	def ival(self, y, *parameters):
-		return self.arch.i_input_validation_function(y,*parameters[:self.npars],*self.static_parameters)
+		return self.arch.i_input_validation_function(y,*parameters[:self.npars])
 
 	def guess(self, x, y):
-		if self.static_parameters:
-			return self.arch.parameter_guess_function(x,y,self.bounds,self.static_parameters)
-		else:
-			return self.arch.parameter_guess_function(x,y,self.bounds)
+		return self.arch.parameter_guess_function(x,y,self.bounds)
 
 	def rfs_custom(self, x=None, p=None, needs_parens=True, inv=False):
 		template = self.arch.i_root_function_template if inv else self.arch.root_function_template
@@ -243,14 +269,15 @@ class model_single(object):
 			return template.format(x="x", p=["[{}]".format(_) for _ in range(istart,istart+self.npars)])
 		else:
 			return template.format(x="x", p=["[{{{}}}]".format(_) for _ in range(self.npars)])
+
 	def irfs(self, istart=0):
 		return self.rfs(istart, True)
 
-	def fit(self, *args, **kwargs):
-		return fit_hist_with_root(self, *args, **kwargs)
+	def fit(self, xdata, ydata, need_cov=False):
+		return fit_hist_with_root(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
 
-	def fit_with_errors(self, *args, **kwargs):
-		return fit_graph_with_root(self, *args, **kwargs)
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
+		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
 
 
 ERR_I_MULTI = "model_multiple does not support inverse operations"
@@ -311,6 +338,7 @@ class model_multiple(object):
 
 	def rfs_custom(self, x, p):
 		...
+
 	def irfs_custom(self, x, p):
 		raise ValueError(ERR_I_MULTI)
 
@@ -327,15 +355,15 @@ class model_multiple(object):
 				pieces.append(c.rfs(None).format(*formatters))
 				istart += c.npars
 		return ' + '.join(pieces)
+
 	def irfs(self,istart=0):
 		raise ValueError(ERR_I_MULTI)
 
-	def fit(self, *args, **kwargs):
-		return fit_hist_with_root(self, *args, **kwargs)
+	def fit(self, xdata, ydata, need_cov=False):
+		return fit_hist_with_root(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
 
-	def fit_with_errors(self, *args, **kwargs):
-		return fit_graph_with_root(self, *args, **kwargs)
-
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
+		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
 
 
 # standard archetypes
@@ -343,7 +371,7 @@ class model_multiple(object):
 
 def always_true(z,*pars):
 	if type(z) is np.ndarray:
-		return np.ones(z.shape,dtpye=bool)
+		return np.ones(z.shape).astype(bool)
 	else:
 		return True
 
@@ -418,27 +446,6 @@ suppressed_monomial = function_archetype(
 	i_root_function_template    = None,
 )
 smono = suppressed_monomial
-
-
-# # exponential with static parameter x0
-# def exponential_local_guess(x,y,bounds,static_parameters):
-# 	x0 = static_parameters[0]
-# 	k = x0 * (math.log(y[0]) - math.log(y[-1])) / (x[0] - x[-1])
-# 	b = y[0] * math.exp(-k*(x[0]/x0-1))
-# 	return [b,k]
-# exponential_local = function_archetype(
-# 	name    = "local_exponential",
-# 	formula = "b*exp(k*(x/x0-1))",
-# 	pnames  = ["b","k"],
-# 	model_function   = lambda x,b,k,x0:b*np.exp(k*(x/x0-1)),
-# 	i_model_function = lambda y,b,k,x0:(np.log(y/b)/k + 1)*x0,
-# 	parameter_guess_function    = exponential_local_guess,
-# 	input_validation_function   = None,
-# 	i_input_validation_function = lambda y,b,k,x0:(y/b)>0,
-# 	root_function_template      = "[{0}]*exp([{1}]*(x/{s[0]}-1))",
-# 	i_root_function_template    = "(log(x/[{0}])/[{1}]+1)*{s[0]}",
-# 	)
-# expl = exponential_local
 
 
 constant = function_archetype(

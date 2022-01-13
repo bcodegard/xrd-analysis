@@ -458,8 +458,7 @@ def main(args, suspend_show=False, colors={}):
 		raise ValueError(ERR_NO_FIT_MODEL)
 
 	# fit the binned data
-	# popt, perr, chi2, ndof = fit_model.fit(midpoints[80:], counts[80:])
-	popt, perr, chi2, ndof = fit_model.fit(midpoints, counts)
+	popt, perr, chi2, ndof, cov = fit_model.fit(midpoints, counts, need_cov = True)
 	if verbosity:
 		line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
 		print("")
@@ -482,6 +481,10 @@ def main(args, suspend_show=False, colors={}):
 					round(perr[ipar],DISPLAY_PRECISION),
 				))
 				ipar += 1
+		print("\nfull covariance matrix")
+		print(cov)
+		print("\nsquare root of diagonal (should be equal to parameter errors)")
+		print(np.sqrt(np.diag(cov)))
 
 
 	# stage 3: display and output
@@ -672,7 +675,9 @@ if __name__ == '__main__':
 	if ARG_MULTI in sys.argv:
 
 		# todo better color handling
-		# todo better label handling
+		# todo better label/legend handling
+		# todo better axis labels and title handling
+		# todo better display axis bounds handling
 
 		# list of complete argument sets
 		arg_sets = []
