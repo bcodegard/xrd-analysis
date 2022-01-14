@@ -166,6 +166,8 @@ class function_archetype(object):
 			root_function_template = None,
 			i_root_function_template = None,
 
+			jacobian = None,
+
 			):
 
 		# name of formula. display only.
@@ -193,6 +195,9 @@ class function_archetype(object):
 
 		self.root_function_template   = root_function_template
 		self.i_root_function_template = i_root_function_template
+
+		# jacobian for y=f(x;*p) on variables {x, *p}
+		self.jacobian = jacobian
 
 	def __call__(self, bounds=None):
 		if bounds is None:
@@ -303,6 +308,9 @@ class model_single(object):
 
 	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
 		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
+
+	def jacobian(self, x, *parameters):
+		return self.arch.jacobian(x,*parameters)
 
 
 ERR_I_MULTI = "model_multiple does not support inverse operations"
@@ -640,6 +648,7 @@ constant = function_archetype(
 	i_input_validation_function = None,
 	root_function_template      = "{p[0]}",
 	i_root_function_template    = None,
+	jacobian = lambda x,c:np.array([0,1]),
 )
 poly0 = constant
 mono0 = constant
@@ -662,6 +671,7 @@ line = function_archetype(
 	i_input_validation_function = None,
 	root_function_template      = "{p[1]} + {p[0]}*{x}",
 	i_root_function_template    = "({x}-{p[1]})/{p[0]}",
+	jacobian = lambda x,a1,a0:np.array([a1,x,1]),
 	# i_root_function_template    = "[{1}] + [{0}]*x",
 	# i_input_validation_function = "(x-[{1}])/[{0}]",
 )
@@ -684,11 +694,26 @@ quadratic = function_archetype(
 	i_input_validation_function = lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
 	root_function_template      = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
 	i_root_function_template    = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
+	jacobian = lambda x,a2,a1,a0:np.array([a1+2*x*a2,x**2,x,1]),
 	# root_function_template      = "[{2}] + [{1}]*x + [{0}]*x**2",
 	# i_root_function_template    = "(-[{1}] + sqrt([{1}]**2 - 4*[{0}]*([{2}]-x)))/(2*[{0}])",
 )
 poly2 = quadratic
 quad = quadratic
+
+quadratic_inverse = function_archetype(
+	name    = "quadratic inverse",
+	formula = "(-b + sqrt(b**2 - 4*a*(c-x)))/(2*a)",
+	pnames  = ["a","b","c"],
+	model_function   = lambda y,a2,a1,a0:(-a1 + np.sqrt(a1**2 - 4*a2*(a0-y)))/(2*a2),
+	i_model_function = lambda x,a2,a1,a0:a0+x*a1+(x**2)*a2,
+	parameter_guess_function    = lambda x,y,bounds:quadratic_guess(y,x,bounds),
+	input_validation_function   = lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
+	i_input_validation_function = always_true,
+	root_function_template      = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
+	i_root_function_template    = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
+)
+iquad = quadratic_inverse
 
 def powerlaw_guess(x,y,bounds):
 	return [y.max() / x.max(), 1.0]

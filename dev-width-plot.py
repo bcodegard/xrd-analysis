@@ -203,6 +203,8 @@ def main(
 
 		show=True,
 
+		files=None,
+
 		):
 
 	mu        = np.array([])
@@ -232,8 +234,9 @@ def main(
 
 	included = lambda n:(n not in ds_blacklist) and ((n in ds_whitelist) or (not ds_whitelist))
 
-	ni_suffix = "" if ni is None else ni_suffix_template.format(ni)
-	files = [file_template.format(_,ni_suffix) for _ in datasets if included(_)]
+	if files is None:
+		ni_suffix = "" if ni is None else ni_suffix_template.format(ni)
+		files = [file_template.format(_,ni_suffix) for _ in datasets if included(_)]
 	ds_included = [_ for _ in datasets if included(_)]
 
 	if not files:
@@ -325,7 +328,7 @@ def main(
 					plt.plot(xaxis, mod.ifn(xaxis,*popt), 'k-', label="model")
 					plt.xlabel("{}: mu (area, pVs)".format(channel))
 					plt.ylabel("energy (KeV)")
-					plt.title("set {}, A = a0 + a1*E + a2*E**2, chisq/dof={}\na0={:>2.2}\xb1{:>2.2} a1={:>2.2}\xb1{:>2.2} x2={:>2.2}\xb1{:>2.2}".format(
+					plt.title("set {}, A = a0 + a1*E + a2*E**2, chisq/dof={}\na0={:>2.2}\xb1{:>2.2} a1={:>2.2}\xb1{:>2.2} a2={:>2.2}\xb1{:>2.2}".format(
 						this_ds,
 						round(chi2/ndof,3),
 						popt[2], perr[2],
@@ -482,15 +485,17 @@ if __name__ == '__main__':
 	for i,amount in enumerate(amounts):
 		main(
 			ni=amount,
-			show=False,
+			show=True,
 
 			do_fit=False,
 
 			calibrate=calibrate,
+			show_calibrations=True,
 
 			# ni_suffix_template = "_1mv_ni{}",
 			ni_suffix_template = "_ni{}",
 
+			exclude_source_peaks = [-1,602, 101,300,400,401, ],
 			# exclude_source_peaks = [-1,602, 101,300,400,401,  200],
 			# require_id = False,
 			# show_excluded_peaks = True,

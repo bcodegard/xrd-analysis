@@ -32,7 +32,7 @@ ERR_FORBIDDEN_TYPE = "forbidden type {} found as entry"
 
 # csv typelists for established uses
 TYPELIST_CALIBRATION = [str, float, int, int, float, int, float]
-
+TYPELIST_XF = [str, int, float]
 
 # internal utility functions
 
@@ -453,6 +453,21 @@ def load_fits(file):
 	# process each to fit_result object
 	results = [fit_result(_) for _ in entries]
 	# return them
+	return results
+
+class xf_result(object):
+	def __init__(self, contents=False):
+		if contents:
+			self.unpack(contents)
+	def unpack(self, contents):
+		self.branch = contents.pop(0)
+		self.order  = contents.pop(0)
+		self.opt    = np.array(contents[:self.order+1])
+		self.cov    = np.array(contents[self.order+1:]).reshape([self.order+1,self.order+1])
+
+def load_xf(file):
+	entries = load_csv(file,TYPELIST_XF)
+	results = [xf_result(_) for _ in entries]
 	return results
 
 

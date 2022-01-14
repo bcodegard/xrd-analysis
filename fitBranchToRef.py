@@ -691,6 +691,11 @@ def main(args, suspend_show=False, colors={}):
 
 		# # todo: can work out error on modeled counts
 		# #       using full covariance and some gross calculus
+		# #       and make some real fancy figures using fill_between
+		# # plt.fill_between(counts, clo, chi, color='grey', alpha=0.25, interpolate=True)
+		# # plt.plot(counts, clo, color='grey', ls='--')
+		# # plt.plot(counts, chi, color='grey', ls='--')
+		
 		# # display root result +- errors
 		# if "e" in display:
 		# 	...
