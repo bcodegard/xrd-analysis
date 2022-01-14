@@ -80,6 +80,7 @@ def fit_hist_with_root(
 		p0,
 		rfs,
 		need_cov=False,
+		skip_p0_improvement=False,
 		):
 	"""performs a root fit on xdata,ydata assuming poisson errors"""
 
@@ -87,17 +88,21 @@ def fit_hist_with_root(
 	lo = [_[0] for _ in bounds]
 	hi = [_[1] for _ in bounds]
 
-	# determined fixed parameters and exclude from fit
-	is_fixed = [l==h for l,h in bounds]
-	if any(is_fixed):
-		# for now, just use p0 in this case
-		# TODO use scipy fit in case of fixed parameters instead of defaulting to p0
-		# can make lambda which meshes dynamic and fixed parameters nicely
+	if skip_p0_improvement:
 		popt = np.array(p0)
 
 	else:
-		# scipy fit for parameter guess input to root fit
-		popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
+		# determined fixed parameters and exclude from fit
+		is_fixed = [l==h for l,h in bounds]
+		if any(is_fixed):
+			# for now, just use p0 in this case
+			# TODO use scipy fit in case of fixed parameters instead of defaulting to p0
+			# can make lambda which meshes dynamic and fixed parameters nicely
+			popt = np.array(p0)
+
+		else:
+			# scipy fit for parameter guess input to root fit
+			popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
 
 	# root object initialization and fit
 	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
@@ -215,6 +220,10 @@ class model_single(object):
 		self.arch       = arch
 		self.bounds     = bounds
 
+		self.is_fixed = np.array([l==h for l,h in self.bounds], dtype=bool)
+		self.is_free  = np.logical_not(self.is_fixed)
+		self.fixed_parameters = np.array([l for l,h in self.bounds if l==h])
+
 		# properties copied from arch
 		self.name    = arch.name
 		self.formula = arch.formula
@@ -231,6 +240,13 @@ class model_single(object):
 			return model_multiple([self, *other.components])
 
 	def fn(self, x, *parameters):
+		# if len(parameters) < self.npars, mesh given parameters with fixed parameters
+		if len(parameters) < self.npars:
+			pars_new = np.zeros(self.npars)
+			pars_new[self.is_free ] = np.array(parameters)
+			pars_new[self.is_fixed] = self.fixed_parameters
+			parameters = pars_new
+
 		return self.arch.model_function(x,*parameters[:self.npars])
 	def ifn(self, y, *parameters):
 		return self.arch.i_model_function(y,*parameters[:self.npars])
@@ -299,6 +315,10 @@ class model_multiple(object):
 		self.bounds_c = [_.bounds for _ in components]
 		self.bounds = sum(self.bounds_c, [])
 
+		self.is_fixed = np.array([l==h for l,h in self.bounds], dtype=bool)
+		self.is_free  = np.logical_not(self.is_fixed)
+		self.fixed_parameters = np.array([l for l,h in self.bounds if l==h])
+
 		self.components = components
 		
 		self.pnames_c = [_.pnames for _ in components]
@@ -317,6 +337,13 @@ class model_multiple(object):
 			return model_multiple([*self.components,*other.components])
 
 	def fn(self,x,*parameters):
+		# if len(parameters) < self.npars, mesh given parameters with fixed parameters
+		if len(parameters) < self.npars:
+			pars_new = np.zeros(self.npars)
+			pars_new[self.is_free ] = np.array(parameters)
+			pars_new[self.is_fixed] = self.fixed_parameters
+			parameters = pars_new
+
 		ans = self.components[0].fn(x,*parameters[0:self.pf_indices[1]])
 		for ic,c in enumerate(self.components[1:]):
 			ans += c.fn(x,*parameters[self.pf_indices[ic+1]:self.pf_indices[ic+2]])

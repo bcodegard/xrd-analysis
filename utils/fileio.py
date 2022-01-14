@@ -402,13 +402,15 @@ class fit_result(object):
 		gb_start = 10
 		gb_stop  = 10 + 7*self.ngaus
 		self.gaus_names  = contents[gb_start:gb_stop:7]
-		self.gaus_bounds = [gmap(float,contents[gb_start+1+7*_:gb_start+7+7*_]) for _ in range(self.ngaus)]
+		gaus_bounds_flat = [gmap(float,contents[gb_start+1+7*_:gb_start+7+7*_]) for _ in range(self.ngaus)]
+		self.gaus_bounds = [list(zip(_[0::2], _[1::2])) for _ in gaus_bounds_flat]
 
 		self.nsmono = int(contents[gb_stop])
 		smono_start = gb_stop+1
-		smono_stop  = gb_stop+1 + 5*self.nsmono
-		self.smono_order  = contents[smono_start:smono_stop:5]
-		self.smono_bounds = [gmap(float,contents[smono_start+1+5*_:smono_start+5+5*_]) for _ in range(self.nsmono)]
+		smono_stop  = gb_stop+1 + 6*self.nsmono
+		# self.smono_order  = contents[smono_start:smono_stop:5]
+		smono_bounds_flat = [gmap(float,contents[smono_start+6*_:smono_start+6+6*_]) for _ in range(self.nsmono)]
+		self.smono_bounds = [list(zip(_[0::2], _[1::2])) for _ in smono_bounds_flat]
 
 		# self.ncuts = int(contents[gb_stop])
 		# c_start = gb_stop + 1

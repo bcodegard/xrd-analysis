@@ -49,14 +49,14 @@ BIN_COUNT_MIN = 50
 
 # mu low,hi; sigma lo,hi; A lo,hi
 GAUS_DEFAULTS  = [-np.inf,np.inf,0.0,np.inf,0.0,np.inf]
-SMONO_DEFAULTS = [3,0.0,np.inf,-np.inf,np.inf]
+SMONO_DEFAULTS = [3,-np.inf,np.inf,0,np.inf]
 
 # how many places past decimal point to show for display purposes
 # does not affect precision of saved information
 DISPLAY_PRECISION = 3
 
 # list of parameters corresponding to the locations of peaks
-PEAK_PARAMETERS = ["mu"]
+PEAK_PARAMETERS = ["mu", "xpeak"]
 
 # display string templates
 FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}\n{rfs}"
@@ -114,15 +114,17 @@ def csv_format_gaus(gaus):
 	gaus_flat = []
 	for g in gaus:
 		gaus_flat.append(g[0] if g[0] else "-")
-		gaus_flat += g[1:]
+		this_bounds = [g[5],g[6],g[1],g[2],g[3],g[4]]
+		gaus_flat += this_bounds
 	# return gaus_names, gaus_bounds
 	return gaus_flat
 
-def csv_format_smono(smono):
+def csv_format_smono(smono_bounds):
 	"""flattens and formats suppressed monomial bounds for CSV file"""
 	smono_flat = []
-	for sm in smono:
-		smono_flat += sm
+	for sm in smono_bounds:
+		for bound in sm:
+			smono_flat += bound
 	return smono_flat
 
 def csv_format_cuts(cuts):
@@ -167,6 +169,9 @@ def main(args, suspend_show=False, colors={}):
 		cuts = []
 	else:
 		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf], [str,float,float])
+
+	# --er
+	event_range = args["event_range"]
 
 	# --model
 	if args["model"] is None:
@@ -219,6 +224,7 @@ def main(args, suspend_show=False, colors={}):
 		print("run        : {}".format(run))
 		print("fit        : {}".format(fit))
 		print("cuts       : {}".format(cuts))
+		print("event_range: {}".format(event_range))
 		print("model      : {}".format([model_id, model_cal_file]))
 		print("raw_bounds : {}".format(raw_bounds))
 		print("nbins      : {}".format(nbins))
@@ -257,6 +263,25 @@ def main(args, suspend_show=False, colors={}):
 		print("loaded branches: {}".format(branches_needed))
 		print("shapes: {}".format([_.shape for _ in branches.values()]))
 		print("")
+
+	# slice branches to specified event range before any processing is done
+	if event_range:
+
+		# assume slice is on axis 0
+		n_events = branches[fit[0]].shape[0]
+
+		# calculate initial and final indices
+		ei = math.floor(n_events * event_range[0])
+		ef = math.floor(n_events * event_range[1])
+
+		if verbosity:
+			print("{} events".format(n_events))
+			print("lo {} -> {}".format(event_range[0], ei))
+			print("hi {} -> {}".format(event_range[1], ef))
+			print("cutting all branches to specified range")
+			print("")
+		
+		branches = {key:arr[ei:ef] for key,arr in branches.items()}
 
 	# if using model, get calibration for fit branch
 	# if not raw_bounds, convert bounds from specified transformed values into raw values
@@ -429,8 +454,6 @@ def main(args, suspend_show=False, colors={}):
 		fit_model_components.append(model.constant())
 	if "e" in background:
 		fit_model_components.append(model.exponential())
-	elif "E" in background:
-		fit_model_components.append(model.exponential_local(static_parameters=[midpoints[0]]))
 
 	# store number of parameters used by background components
 	n_bg_parameters = sum([_.npars for _ in fit_model_components])
@@ -444,8 +467,10 @@ def main(args, suspend_show=False, colors={}):
 		fit_model_components.append(model.gaussian(this_bounds))
 
 	# add suppressed monomials
+	smono_bounds = []
 	for ism,sm in enumerate(smono):
 		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
+		smono_bounds.append(this_bounds)
 		order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
 		fit_model_components.append(model.smono(this_bounds))
 
@@ -615,7 +640,7 @@ def main(args, suspend_show=False, colors={}):
 			len(gaus), # number of gaussians
 			*csv_format_gaus(gaus), # name,*bounds per gaussian, flattened
 			len(smono),
-			*csv_format_smono(smono),
+			*csv_format_smono(smono_bounds),
 			
 			# cut data
 			len(cuts), # number of cuts
@@ -655,6 +680,7 @@ if __name__ == '__main__':
 	parser.add_argument("run"  ,type=str,help="file location, name, or number")
 	parser.add_argument("fit"  ,type=str,help="branch to fit: branch,min,max")
 	parser.add_argument("--cut",type=str,action='append',help="branch to cut on: branch,min,max")
+	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("--m"  ,type=str,dest="model",help="model to use: model_id,calibration_file")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
 
