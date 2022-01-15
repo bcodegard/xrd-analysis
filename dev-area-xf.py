@@ -130,51 +130,79 @@ def main(
 	# test peaks
 	area, _, area_err, _, peak_id = get_peaks(test_spectra, branch, exclude_source_peaks, require_id)
 
-	# convert area, area_err from t2 (test peak dataset) to t1 (source dataset) using area xf
-	assert branch == area_xf.branch
+	if area_xf is None:
+		area_t1     = area
+		area_err_t1 = area_err
 
-	if area_xf.order == 0:
-		area_xf_model = model.poly1(bounds=[[1,1],[-np.inf,np.inf]])
-	elif area_xf.order == 1:
-		area_xf_model = model.poly1()
-	elif area_xf.order == 2:
-		area_xf_model = model.poly2()
+	else:
 
-	print("")
-	print(area_xf.order)
-	print(area_xf.opt)
-	print(area_xf.cov)
-	print("")
+		# convert area, area_err from t2 (test peak dataset) to t1 (source dataset) using area xf
+		assert branch == area_xf.branch
 
-	area_t1     = []
-	area_err_t1 = []
+		if area_xf.order == 0:
+			area_xf_model = model.poly1(bounds=[[1,1],[-np.inf,np.inf]])
+		elif area_xf.order == 1:
+			area_xf_model = model.poly1()
+		elif area_xf.order == 2:
+			area_xf_model = model.poly2()
 
-	line_template = "{:>4} | {:>10.2f} | {:>10.2f} | {:>10.2f} | {:>10.2f} | {}"
-	print("a2 -> a1")
-	for i,this_area in enumerate(area):
-		this_area_err = area_err[i]
+		# assume order == 1 for now
+		# invert parameters and covariance
+		# need to update models to handle jacobians, inverses, error calculations, etc.
+		print("")
+		b = area_xf.opt[0]
+		c = area_xf.opt[1]
+		opt_inv = np.array([1/b, -c/b])
+		print(b,c)
+		print(opt_inv)
+		jinv = np.array([[-1/(b**2), 0],[c/(b**2), -1/b]])
+		print(jinv)
+		cov_inv = np.matmul(jinv, np.matmul(area_xf.cov, jinv.swapaxes(0,1)))
+		print(cov_inv)
 
-		# best value for A(t1) for this peak
-		this_area_t1 = area_xf_model(this_area, *area_xf.opt)
+		# replace area_xf opt and cov with inverse operation's values
+		area_xf.opt = opt_inv
+		area_xf.cov = cov_inv
 
-		# jacobian for this peak
-		this_jac = area_xf_model.jacobian(this_area, *area_xf.opt)
 
-		# j[0] is for A(t2)
-		# No covariance between A(t2) and the optimal xf paramters
-		v00 = (this_area_err**2) * (this_jac[0]**2)
+		print("")
+		print(area_xf.order)
+		print(area_xf.opt)
+		print(area_xf.cov)
+		print("")
 
-		# j[1:] is for parameters *q of area xf
-		xf_jac = this_jac[1:]
-		vii = np.dot(xf_jac, np.matmul(area_xf.cov, xf_jac))
+		area_t1     = []
+		area_err_t1 = []
+		line_template = "{:>4} | {:>10.2f} | {:>10.2f} | {:>10.2f} | {:>10.2f} | {}"
+		print("a2 -> a1")
+		for i,this_area in enumerate(area):
+			this_area_err = area_err[i]
 
-		this_area_err_t1 = (v00 + vii) ** 0.5
+			# best value for A(t1) for this peak
+			this_area_t1 = area_xf_model(this_area, *area_xf.opt)
 
-		area_t1.append(this_area_t1)
-		area_err_t1.append(this_area_err_t1)
+			# jacobian for this peak
+			this_jac = area_xf_model.jacobian(this_area, *area_xf.opt)
 
-		print(line_template.format(peak_id[i],this_area,this_area_err,this_area_t1,this_area_err_t1,this_jac))
-	print("")
+			# j[0] is for A(t2)
+			# No covariance between A(t2) and the optimal xf paramters
+			v00 = (this_area_err**2) * (this_jac[0]**2)
+
+			# j[1:] is for parameters *q of area xf
+			if area_xf.order == 0:
+				xf_jac = this_jac[2:]
+			else:
+				xf_jac = this_jac[1:]
+			vii = np.dot(xf_jac, np.matmul(area_xf.cov, xf_jac))
+
+			this_area_err_t1 = (v00 + vii) ** 0.5
+
+			area_t1.append(this_area_t1)
+			area_err_t1.append(this_area_err_t1)
+
+			print(line_template.format(peak_id[i],this_area,this_area_err,this_area_t1,this_area_err_t1,this_jac))
+		print("")
+
 
 
 	# convert a(t2), aerr(t2) to E, Eerr
@@ -184,6 +212,8 @@ def main(
 
 	popt_ec, perr_ec, chi2_ec, ndof_ec, cov_ec, maxdev_ec = ec_results
 	print("a1 -> E")
+
+	line_template = "{:>4} | {:>9.2f} \xb1 {:<7.2f} | {:>9.2f} \xb1 {:<7.2f} | {:>6.2f} \xb1 {:.2f} \xb1 {:<4.2f} | {}"
 	for i,this_a1 in enumerate(area_t1):
 		this_a1_err = area_err_t1[i]
 
@@ -203,7 +233,9 @@ def main(
 		energy.append(this_energy)
 		energy_err.append(this_energy_err)
 
-		print(line_template.format(peak_id[i],this_a1,this_a1_err,this_energy,this_energy_err,this_jac))
+		this_energy_stat_err = this_energy * maxdev_ec
+
+		print(line_template.format(peak_id[i],area[i],area_err[i],this_a1,this_a1_err,this_energy,this_energy_err,this_energy_stat_err,this_jac))
 
 	energy     = np.array(energy    )
 	energy_err = np.array(energy_err)
@@ -215,9 +247,6 @@ def main(
 	energy_err_total = np.sqrt(energy_err**2 + (maxdev_ec * energy)**2)
 	print(energy_err)
 	print(energy_err_total)
-
-
-
 
 
 
@@ -292,6 +321,7 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 		print(cov)
 
 		result_string = "{}={:>.1e}\xb1{:>.1e}"
+		xaxis = np.linspace(min(area), max(area), 500)
 
 		plt.errorbar(
 			area,
@@ -304,7 +334,6 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 			label="data",
 		)
 
-		xaxis = np.linspace(min(area), max(area), 500)
 		plt.plot(xaxis, energy_model.fn(xaxis,*popt), 'k-', label="model")
 		plt.xlabel("Area (pVs) for {}".format(branch))
 		plt.ylabel("Energy (KeV)")
@@ -316,49 +345,122 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 		plt.legend()
 		plt.show()
 
+		# relative plot
+		ec  = energy_model(area, *popt)
+		elo = energy_model(area-area_err, *popt)
+		ehi = energy_model(area+area_err, *popt)
+		# elo = energy_model(area, *(popt-perr))
+		# ehi = energy_model(area, *(popt+perr))
+		plt.errorbar(energy,(ec-energy)/energy,(ehi-ec)/energy,color="darkgreen",marker=".",ls="",label="best\xb1error")
+		# plt.plot(energy,ec  - energy,color="darkgreen",marker=".",ls="",label="best fit")
+		# plt.plot(energy,elo - energy,color="g",marker=".",ls="",label="\xb1 error")
+		# plt.plot(energy,ehi - energy,color="g",marker=".",ls="")
+		plt.axhline(0,color='k')
+		plt.axhline( 0.01,color='b',label='\xb11%')
+		plt.axhline(-0.01,color='b')
+		plt.axhline( 0.02,color='c',label='\xb12%')
+		plt.axhline(-0.02,color='c')
+
+		plt.xlabel("theoretical peak energy (KeV)")
+		plt.ylabel("(model - theory)/theory")
+		# plt.plot(xaxis, energy_model.fn(xaxis,*popt), 'k-', label="model")
+		# plt.xlabel("Area (pVs) for {}".format(branch))
+		# plt.ylabel("Energy (KeV)")
+		plt.title("y = {}; chi2/dof={}\n{}".format(
+			energy_model.formula,
+			round(chi2/ndof, 4),
+			", ".join([result_string.format(energy_model.pnames[ip], p, perr[ip]) for ip,p in enumerate(popt)])
+		))
+		plt.legend()
+		plt.show()
+
+
 	return popt, perr, chi2, ndof, cov, maxdev
 
 
 if __name__ == '__main__':
 
-	file_src_spec  = './data/fits/src_nov22.csv'
-	file_test_spec = './data/fits/src_nov23.csv'
-	file_xf = './data/xf/xf_22to23.csv'
 
-	branch="area_2988_1"
+	fit_direct = True
 
-	exclude_source_peaks=[
-		-1,  # unidentified
-		602, # subdominant
-		101,300,400,401, # >200 KeV 
-		100, # Cs137 32KeV outlier
-	]
+	if fit_direct:
+		file_src_spec  = './data/fits/src_nov22.csv'
+		branch="area_2988_1"
+		exclude_source_peaks=[
+			-1,  # unidentified
+			602, # subdominant
+			101,300,401, # 
+			400, # >200 KeV 
+			100, # Cs137 32KeV outlier
+		]
+		src_spec  = fileio.load_fits(file_src_spec)
+		energy_model = model.quad()
+		ec_results = calibrate_energy(
+			energy_model,
+			src_spec,
+			branch,
+			exclude_source_peaks=exclude_source_peaks,
+			show_calibrations=False,
+		)
+		main(
+			src_spec,
+			branch,
+			energy_model,
+			ec_results,
+			None,
+		)
 
-	src_spec  = fileio.load_fits(file_src_spec)
-	test_spec = fileio.load_fits(file_test_spec)
+	fit_transformed = False
+	if fit_transformed:
 
-	xfs = fileio.load_xf(file_xf)
+		file_src_spec  = './data/fits/src_nov22.csv'
+		file_test_spec = './data/fits/src_nov23.csv'
 
-	energy_model = model.quad()
-	ec_results = calibrate_energy(
-		energy_model,
-		src_spec,
-		branch,
-		exclude_source_peaks=exclude_source_peaks,
-		show_calibrations=False,
-	)
+		branch="area_2988_1"
 
-	
+		exclude_source_peaks=[
+			-1,  # unidentified
+			602, # subdominant
+			101,300,401, # 
+			400, # >200 KeV 
+			100, # Cs137 32KeV outlier
+		]
 
-
-
-
-	main(
-		test_spec,
-		branch,
-		energy_model,
-		ec_results,
-		xfs[4],
-	)
+		src_spec  = fileio.load_fits(file_src_spec)
+		test_spec = fileio.load_fits(file_test_spec)
 
 
+		energy_model = model.quad()
+		ec_results = calibrate_energy(
+			energy_model,
+			src_spec,
+			branch,
+			exclude_source_peaks=exclude_source_peaks,
+			show_calibrations=False,
+		)
+
+		file_xf = './data/xf/xf_22to23.csv'
+		xfs = fileio.load_xf(file_xf)
+
+		main(
+			test_spec,
+			branch,
+			energy_model,
+			ec_results,
+			xfs[2],
+		)
+
+
+
+
+
+	# file_xf = './data/xf/xf_22to23_s5.csv'
+	# xfs = fileio.load_xf(file_xf)
+
+	# main(
+	# 	test_spec,
+	# 	branch,
+	# 	energy_model,
+	# 	ec_results,
+	# 	xfs[4],
+	# )

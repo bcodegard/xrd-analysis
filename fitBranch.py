@@ -749,7 +749,10 @@ if __name__ == '__main__':
 			this_args = vars(parser.parse_args(arg_set))
 			main(
 				this_args,
+
+				# todo: better behavior in main when part of multiple set call
 				suspend_show = True,
+				
 				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
 			)
 

@@ -310,6 +310,11 @@ class model_single(object):
 		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
 
 	def jacobian(self, x, *parameters):
+		if len(parameters) < self.npars:
+			pars_new = np.zeros(self.npars)
+			pars_new[self.is_free ] = np.array(parameters)
+			pars_new[self.is_fixed] = self.fixed_parameters
+			parameters = pars_new
 		return self.arch.jacobian(x,*parameters)
 
 
@@ -672,8 +677,6 @@ line = function_archetype(
 	root_function_template      = "{p[1]} + {p[0]}*{x}",
 	i_root_function_template    = "({x}-{p[1]})/{p[0]}",
 	jacobian = lambda x,a1,a0:np.array([a1,x,1]),
-	# i_root_function_template    = "[{1}] + [{0}]*x",
-	# i_input_validation_function = "(x-[{1}])/[{0}]",
 )
 poly1 = line
 
@@ -695,8 +698,6 @@ quadratic = function_archetype(
 	root_function_template      = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
 	i_root_function_template    = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
 	jacobian = lambda x,a2,a1,a0:np.array([a1+2*x*a2,x**2,x,1]),
-	# root_function_template      = "[{2}] + [{1}]*x + [{0}]*x**2",
-	# i_root_function_template    = "(-[{1}] + sqrt([{1}]**2 - 4*[{0}]*([{2}]-x)))/(2*[{0}])",
 )
 poly2 = quadratic
 quad = quadratic
@@ -728,8 +729,6 @@ powerlaw = function_archetype(
 	i_input_validation_function = lambda y,b,m:y/b > 0,
 	root_function_template      = "{p[0]}*({x}**{p[1]})",
 	i_root_function_template    = "({x}/{p[0]})**(1/{p[1]})",
-	# root_function_template      = "[{0}]*(x**[{1}])",
-	# i_root_function_template    = "(x/[{0}])**(1/[{1}])",
 )
 
 def powerlaw_plus_constant_guess(x,y,bounds):
