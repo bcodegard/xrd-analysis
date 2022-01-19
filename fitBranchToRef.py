@@ -170,7 +170,7 @@ def main(args, suspend_show=False, colors={}):
 	if args["cut"] is None:
 		cuts = []
 	else:
-		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf], [str,float,float])
+		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
 
 	# --er
 	event_range = args["event_range"]
@@ -188,6 +188,12 @@ def main(args, suspend_show=False, colors={}):
 	# --bins
 	nbins = args["nbins"]
 
+	# --g
+	if args["gaus"] is None:
+		gaus = []
+	else:
+		gaus = split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
+
 	# --rs
 	rs_file,_,rs_run = args["rs"].partition(',')
 	if not (os.sep in rs_file):
@@ -195,7 +201,10 @@ def main(args, suspend_show=False, colors={}):
 	rs_run = int(rs_run) if rs_run else None
 
 	# --xf
-	xf_order = args["xf"]
+	xf_order = int(args["xf"][0])
+	XF_PARAM_GUESS = [0.0, 1.0, 0.0]
+	for iv,value in enumerate(args["xf"][1:]):
+		XF_PARAM_GUESS[2-xf_order+iv]=value
 
 	# display args
 	display = args["display"]
@@ -223,6 +232,7 @@ def main(args, suspend_show=False, colors={}):
 		print("event_range: {}".format(event_range))
 		print("model      : {}".format([model_id, model_cal_file]))
 		print("raw_bounds : {}".format(raw_bounds))
+		print("gaus       : {}".format(gaus))
 		print("nbins      : {}".format(nbins))
 		print("rs_file    : {}".format(rs_file))
 		print("rs_run     : {}".format(rs_run))
@@ -369,6 +379,7 @@ def main(args, suspend_show=False, colors={}):
 
 	# list of filters to apply (with and logic)
 	filters = []
+	filters_or = []
 
 	# fit branch validation
 	if model_id != -1:
@@ -378,13 +389,33 @@ def main(args, suspend_show=False, colors={}):
 
 	# calculate bound filters
 	for i,cut in enumerate([fit] + cuts):
-		b,bLo,bHi = cut
+
+		# determine cut logic group
+		if i == 0:
+			logic = "and"
+		else:
+			logic = cut[3]
+
+		filter_group = filters if logic == "and" else filters_or
+
+		b,bLo,bHi = cut[:3]
 		if bLo != -np.inf:
-			filters.append(branches[b] >= bLo)
-			print("{} >= {}: {} / {} pass".format(b,bLo,filters[-1].sum(), filters[-1].shape[0]))
+			filter_group.append(branches[b] >= bLo)
+			print("{} >= {}: {} / {} pass".format(b,bLo,filter_group[-1].sum(), filter_group[-1].shape[0]))
 		if bHi != np.inf:
-			filters.append(branches[b] <= bHi)
-			print("{} <= {}: {} / {} pass".format(b,bHi,filters[-1].sum(), filters[-1].shape[0]))
+			filter_group.append(branches[b] <= bHi)
+			print("{} <= {}: {} / {} pass".format(b,bHi,filter_group[-1].sum(), filter_group[-1].shape[0]))
+
+	# turn filters_or into one filter, append to filters
+	if filters_or:
+		ftr_or = np.any(np.stack(filters_or, axis=0), axis=0)
+		filters.append(ftr_or)
+		if verbosity:
+			print("combined or filter (any): {} / {} pass".format(ftr_or.sum(), ftr_or.size))
+			print("combined filter appended to list of AND filters")
+	else:
+		if verbosity:
+			print("no filters with OR logic")
 
 	# stack and compress filters; apply to get fit data
 	if filters:
@@ -431,8 +462,9 @@ def main(args, suspend_show=False, colors={}):
 			print("")
 
 	# make bin array
-	# no need to assess min/max values since fit_data already has cuts applied
-	edges = np.linspace(fit_data.min(), fit_data.max(), nbins + 1)
+	edgeLo = fit_data.min() if fit[1] == -np.inf else fit[1]
+	edgeHi = fit_data.max() if fit[2] ==  np.inf else fit[2]
+	edges = np.linspace(edgeLo, edgeHi, nbins + 1)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	counts, edges = np.histogram(fit_data, edges)
 
@@ -492,6 +524,19 @@ def main(args, suspend_show=False, colors={}):
 	sum_data = counts.sum()
 	relative_magnitude = sum_data / sum_ref
 
+	# components on top of reference spectrum
+	n_postref_params = 0
+	# # add gaussians
+	gaus_names = []
+	for ig,g in enumerate(gaus):
+		gaus_names.append(g[0])
+		# re-arrange so as to have mu bounds specified first
+		this_bounds = [[g[5],g[6]], [g[1],g[2]], [g[3],g[4]]]
+		component = model.gaussian(this_bounds)
+		fit_model_components.append(component)
+		fit_model = fit_model + component
+		n_postref_params += 3
+
 	# # test model integrity
 	# plt.plot(midpoints, fit_model(midpoints, *ref.popt), 'r-')
 	# plt.plot(midpoints, counts, 'k.')
@@ -500,13 +545,13 @@ def main(args, suspend_show=False, colors={}):
 	# todo: base bounds on user input and/or x rescaling
 	XF_PARAM_BOUNDS = [[-0.1, 0.1], [0.5, 2.0], [-np.inf, np.inf]]
 	XF_PARAM_NAMES = ["a", "b", "c"]
-	XF_PARAM_GUESS = [0.0, 1.0, 0.0]
 	PNAMES_XF  = ["mu","xpeak"]
+	# PNAMES_XF  = ["mu"]
 	PNAMES_MAG = ["a", "b", "c", "a0", "a1", "a2",  "q"]
-	def make_xf_lambda(a,order):
+	def make_xf_lambda(a,a0,order):
 		if order == 2:
-			lam = lambda q:q[0]*(a**2) + q[1]*a + q[2]
-			rfs = "({}*[0] + {}*[1] + [2])".format(a**2, a)
+			lam = lambda q:q[0]*(a**2)/a0 + q[1]*a + q[2]
+			rfs = "({}*[0] + {}*[1] + [2])".format((a**2)/a0, a)
 		elif order == 1:
 			lam = lambda q:q[0]*a + q[1]
 			rfs = "({}*[0] + [1])".format(a)
@@ -519,8 +564,10 @@ def main(args, suspend_show=False, colors={}):
 	n_other_params = 0
 	for ip,p in enumerate(fit_model.pnames):
 
+		is_postref = ip >= (len(fit_model.pnames) - n_postref_params)
+
 		# not free if transforming it
-		if p in PNAMES_XF:
+		if (p in PNAMES_XF) and not is_postref:
 			continue
 
 		# # still need to keep fixed parameters as parameters!
@@ -544,9 +591,11 @@ def main(args, suspend_show=False, colors={}):
 	# construct meta model properties
 	for ip,p in enumerate(fit_model.pnames):
 
+		is_postref = ip >= (len(fit_model.pnames) - n_postref_params)
+
 		# location param -> xf via polynomial
-		if p in PNAMES_XF:
-			lam,rfs = make_xf_lambda(ref.popt[ip], xf_order)
+		if (p in PNAMES_XF) and not is_postref:
+			lam,rfs = make_xf_lambda(ref.popt[ip], 100000, xf_order)
 			xfp.append(lam)
 			xfp_rfs.append(rfs)
 
@@ -560,11 +609,22 @@ def main(args, suspend_show=False, colors={}):
 
 			# not fixed parameter
 			else:
-				# if p represents a magnitude parameter, apply scaling to q0 entry
-				if p in PNAMES_MAG:
-					q0.append(ref.popt[ip] * relative_magnitude)
+
+				# postref (not part of reference spectrum) -> guess = bounds midpoint
+				if is_postref:
+					q0.append(0.5 * (fit_model.bounds[ip][0] + fit_model.bounds[ip][1]))
+
+				# not postref: take from reference spectrum, maybe with scaling
 				else:
-					q0.append(ref.popt[ip])
+					# if p represents a magnitude parameter, apply scaling to q0 entry
+					if p in PNAMES_MAG:
+						q0.append(ref.popt[ip] * relative_magnitude)
+					else:
+						q0.append(ref.popt[ip])
+
+			# # TEMP hacking order parameter
+			# if p == "n":
+			# 	bounds = [1.0,4.0]
 
 			unitvec = np.zeros(n_params, dtype=bool)
 			unitvec[i_next_param]=True
@@ -894,13 +954,14 @@ if __name__ == '__main__':
 
 	# fitting arguments
 	parser.add_argument("--bins",type=int,default=0,dest="nbins",help="number of bins to use")
+	parser.add_argument("--g"   ,type=str,action='append',dest="gaus" ,help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
 
 	# get all fit info from reference spectrum
 	# file may contain multiple entries. choose by:
 	#     1) identical fit branch
 	#     2) run number if specified, else first entry passing 1).
 	parser.add_argument("--rs",type=str,default="",help="file containing reference spectrum, and optionally which run to use the spectrum of")
-	parser.add_argument("--xf",type=int,default=2 ,help="order of area transformation, [0-2]. 0 = const. offset, 1 = linear, 2 = quadratic")
+	parser.add_argument("--xf",type=float,default=2,nargs="+",help="order of area transformation, [0-2]. 0 = const. offset, 1 = linear, 2 = quadratic")
 
 	# display arguments
 	parser.add_argument("--d",type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (w)idths (e)rror")

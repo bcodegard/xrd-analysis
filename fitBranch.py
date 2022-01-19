@@ -134,7 +134,7 @@ def csv_format_cuts(cuts):
 	cut_flat = []
 	for c in cuts:
 		cut_flat.append(c[0])
-		cut_flat += c[1:]
+		cut_flat += c[1:3]
 	# return cut_branches, cut_bounds
 	return cut_flat
 
@@ -168,7 +168,7 @@ def main(args, suspend_show=False, colors={}):
 	if args["cut"] is None:
 		cuts = []
 	else:
-		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf], [str,float,float])
+		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
 
 	# --er
 	event_range = args["event_range"]
@@ -375,6 +375,7 @@ def main(args, suspend_show=False, colors={}):
 
 	# list of filters to apply (with and logic)
 	filters = []
+	filters_or = []
 
 	# fit branch validation
 	if model_id != -1:
@@ -384,13 +385,33 @@ def main(args, suspend_show=False, colors={}):
 
 	# calculate bound filters
 	for i,cut in enumerate([fit] + cuts):
-		b,bLo,bHi = cut
+
+		# determine cut logic group
+		if i == 0:
+			logic = "and"
+		else:
+			logic = cut[3]
+
+		filter_group = filters if logic == "and" else filters_or
+
+		b,bLo,bHi = cut[:3]
 		if bLo != -np.inf:
-			filters.append(branches[b] >= bLo)
-			print("{} >= {}: {} / {} pass".format(b,bLo,filters[-1].sum(), filters[-1].shape[0]))
+			filter_group.append(branches[b] >= bLo)
+			print("{} >= {}: {} / {} pass".format(b,bLo,filter_group[-1].sum(), filter_group[-1].shape[0]))
 		if bHi != np.inf:
-			filters.append(branches[b] <= bHi)
-			print("{} <= {}: {} / {} pass".format(b,bHi,filters[-1].sum(), filters[-1].shape[0]))
+			filter_group.append(branches[b] <= bHi)
+			print("{} <= {}: {} / {} pass".format(b,bHi,filter_group[-1].sum(), filter_group[-1].shape[0]))
+
+	# turn filters_or into one filter, append to filters
+	if filters_or:
+		ftr_or = np.any(np.stack(filters_or, axis=0), axis=0)
+		filters.append(ftr_or)
+		if verbosity:
+			print("combined or filter (any): {} / {} pass".format(ftr_or.sum(), ftr_or.size))
+			print("combined filter appended to list of AND filters")
+	else:
+		if verbosity:
+			print("no filters with OR logic")
 
 	# stack and compress filters; apply to get fit data
 	if filters:
@@ -437,8 +458,9 @@ def main(args, suspend_show=False, colors={}):
 			print("")
 
 	# make bin array
-	# no need to assess min/max values since fit_data alreayd has cuts applied
-	edges = np.linspace(fit_data.min(), fit_data.max(), nbins + 1)
+	edgeLo = fit_data.min() if fit[1] == -np.inf else fit[1]
+	edgeHi = fit_data.max() if fit[2] ==  np.inf else fit[2]
+	edges = np.linspace(edgeLo, edgeHi, nbins + 1)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	counts, edges = np.histogram(fit_data, edges)
 

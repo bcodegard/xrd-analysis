@@ -195,6 +195,7 @@ def main(
 				xf_jac = this_jac[1:]
 			vii = np.dot(xf_jac, np.matmul(area_xf.cov, xf_jac))
 
+			# print(this_area_err, this_jac[0], v00**0.5, vii**0.5)
 			this_area_err_t1 = (v00 + vii) ** 0.5
 
 			area_t1.append(this_area_t1)
@@ -381,7 +382,7 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 if __name__ == '__main__':
 
 
-	fit_direct = True
+	fit_direct = False
 
 	if fit_direct:
 		file_src_spec  = './data/fits/src_nov22.csv'
@@ -410,11 +411,13 @@ if __name__ == '__main__':
 			None,
 		)
 
-	fit_transformed = False
+
+
+	fit_transformed = True
 	if fit_transformed:
 
 		file_src_spec  = './data/fits/src_nov22.csv'
-		file_test_spec = './data/fits/src_nov23.csv'
+		file_test_spec = './data/fits/pb_ka_3540.csv'
 
 		branch="area_2988_1"
 
@@ -439,7 +442,8 @@ if __name__ == '__main__':
 			show_calibrations=False,
 		)
 
-		file_xf = './data/xf/xf_22to23.csv'
+
+		file_xf = './data/xf/xf_3540_to_3443_unsat.csv'
 		xfs = fileio.load_xf(file_xf)
 
 		main(
@@ -447,7 +451,7 @@ if __name__ == '__main__':
 			branch,
 			energy_model,
 			ec_results,
-			xfs[2],
+			xfs[0],
 		)
 
 
