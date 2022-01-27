@@ -17,8 +17,15 @@ import numpy as np
 
 # globals
 
-# default top level rootkey
-ROOTKEY_DEFAULT='Events;1'
+# root file key behavior, priority
+# 1) supplied value
+# 2) default mode result
+# 3) default value
+# 4) default index in all existing keys
+ROOTKEY_DEFAULT_MODE = 'last'
+ROOTKEY_DEFAULT_MODE_TEMPLATE = 'Events;'
+ROOTKEY_DEFAULT_KEY='Events;1'
+ROOTKEY_DEFAULT_INDEX = [-1]
 
 # list of types that csv entries aren't allowed to be
 CSV_TYPES_FORBIDDEN = [list, tuple]
@@ -159,8 +166,8 @@ def get_keys(rootfile, rootkey=None):
 
 		# default rootkey if not specified
 		if rootkey is None:
-			if ROOTKEY_DEFAULT in root_obj.keys():
-				rootkey = ROOTKEY_DEFAULT
+			if ROOTKEY_DEFAULT_KEY in root_obj.keys():
+				rootkey = ROOTKEY_DEFAULT_KEY
 			else:
 				rootkey = root_obj.keys()[0]
 
@@ -185,35 +192,66 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 		which = {which}
 
 	# convert to dict of key:is_2d if not already
-	if type(which) is set:
+	if type(which) in [set,list,tuple]:
 		which = {key:False for key in which}
 
 	# open root file and extract branches as arrays
 	with uproot.open(rootfile) as root_obj:
 
-		# default rootkey if not specified
+		# no rootkey specified
 		if rootkey is None:
-			if ROOTKEY_DEFAULT in root_obj.keys():
-				rootkey = ROOTKEY_DEFAULT
+
+			# priority 1: ROOTKEY_DEFAULT_MODE
+			rootkeys_match = [_ for _ in sorted(root_obj.keys()) if _.startswith(ROOTKEY_DEFAULT_MODE_TEMPLATE)]
+			if rootkeys_match:
+				if ROOTKEY_DEFAULT_MODE == "last":
+					rootkey = rootkeys_match[-1]
+				elif ROOTKEY_DEFAULT_MODE == "first":
+					rootkey = rootkeys_match[0]
+				elif ROOTKEY_DEFAULT_MODE == "all":
+					rootkey = rootkeys_match
+				# none of the above -> assume integer as index
+				else:
+					rootkey = rootkeys_match[ROOTKEY_DEFAULT_MODE]
+
+			# no keys matching template
 			else:
-				rootkey = root_obj.keys()[0]
+				
+				# priority 2: default value
+				if ROOTKEY_DEFAULT_KEY in root_obj.keys():
+					rootkey = ROOTKEY_DEFAULT_KEY
 
-		tree = root_obj[rootkey]
-		keys = tree.keys()
+				# priority 3: index
+				else:
+					rootkey = sorted(root_obj.keys())[ROOTKEY_DEFAULT_INDEX]
 
-		# if which:
-		branches_get = [_ for _ in keys if to_str(_) in which]
-		# else:
-			# branches_get = [_ for _ in keys]
+		# convert single to list
+		if not (type(rootkey) in [list,tuple,set]):
+			rootkey = [rootkey]
+
+		first_key = True
 		branches = {}
-		for b in branches_get:
-			branches[b] = branch_to_array(
-				tree.arrays(b),
-				b if which.get(b,False) else False,
-				dtypes.get(b,float),
-			)
 
-		# branches = {to_str(key):tree.arrays(key).to_numpy().astype(dtypes if type(dtypes) is type else dtypes.get(key, float)) for key in branches_get}
+		# load arrays from each rootkey and concatenate
+		for rk in rootkey:
+
+			tree = root_obj[rk]
+			keys = tree.keys()
+
+			branches_get = [_ for _ in keys if to_str(_) in which]
+
+			for b in branches_get:
+				this_array = branch_to_array(tree.arrays(b),b if which.get(b,False) else False,dtypes.get(b,float))
+				print(this_array.size)
+				print(this_array[:10])
+
+				if first_key:
+					branches[b] = this_array
+
+				else:
+					branches[b] = np.concatenate((branches[b], this_array))
+
+			first_key = False
 
 	return branches
 

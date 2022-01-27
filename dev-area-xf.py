@@ -386,7 +386,8 @@ if __name__ == '__main__':
 
 	if fit_direct:
 		file_src_spec  = './data/fits/src_nov22.csv'
-		branch="area_2988_1"
+		file_test_spec = './data/fits/pb_ka_nolyso_3443.csv'
+		branch="area_2988_2"
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
@@ -403,8 +404,9 @@ if __name__ == '__main__':
 			exclude_source_peaks=exclude_source_peaks,
 			show_calibrations=False,
 		)
+		test_spec = fileio.load_fits(file_test_spec)
 		main(
-			src_spec,
+			test_spec,
 			branch,
 			energy_model,
 			ec_results,
@@ -416,10 +418,19 @@ if __name__ == '__main__':
 	fit_transformed = True
 	if fit_transformed:
 
-		file_src_spec  = './data/fits/src_nov22.csv'
-		file_test_spec = './data/fits/pb_ka_3540.csv'
+		bnl_run_test = 3681 # 3549
+		bnl_run_xf   = 3681 # 3537
 
-		branch="area_2988_1"
+		file_src_spec  = './data/fits/src_nov22.csv'
+		# file_test_spec = './data/fits/peaks_nolyso_{}.csv'.format(bnl_run_test)
+		# file_test_spec = './data/fits/beam_peak_{}.csv'.format(bnl_run_test)
+		file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
+
+		ch = 2
+		branch="area_2988_{}".format(ch)
+
+		file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
+		xf = fileio.load_xf(file_xf)[0]#[ch-1]
 
 		exclude_source_peaks=[
 			-1,  # unidentified
@@ -432,7 +443,6 @@ if __name__ == '__main__':
 		src_spec  = fileio.load_fits(file_src_spec)
 		test_spec = fileio.load_fits(file_test_spec)
 
-
 		energy_model = model.quad()
 		ec_results = calibrate_energy(
 			energy_model,
@@ -442,16 +452,12 @@ if __name__ == '__main__':
 			show_calibrations=False,
 		)
 
-
-		file_xf = './data/xf/xf_3540_to_3443_unsat.csv'
-		xfs = fileio.load_xf(file_xf)
-
 		main(
 			test_spec,
 			branch,
 			energy_model,
 			ec_results,
-			xfs[0],
+			xf,
 		)
 
 

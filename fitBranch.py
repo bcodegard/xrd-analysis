@@ -173,6 +173,11 @@ def main(args, suspend_show=False, colors={}):
 	# --er
 	event_range = args["event_range"]
 
+	# --con
+	# TODO change to specifying convolution per branch being used
+	#      or have list of branches to convolve if specified
+	convolve = args["convolve"]
+
 	# --model
 	if args["model"] is None:
 		model_id = -1
@@ -225,6 +230,7 @@ def main(args, suspend_show=False, colors={}):
 		print("fit        : {}".format(fit))
 		print("cuts       : {}".format(cuts))
 		print("event_range: {}".format(event_range))
+		print("convolve   : {}".format(convolve))
 		print("model      : {}".format([model_id, model_cal_file]))
 		print("raw_bounds : {}".format(raw_bounds))
 		print("nbins      : {}".format(nbins))
@@ -259,6 +265,33 @@ def main(args, suspend_show=False, colors={}):
 		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed}
 		# print(branches.keys())
 
+	# convolve scalers
+	kernel_size = convolve[0]
+	if kernel_size:
+
+		if len(convolve)>1:
+			convolve_method = convolve[1]
+		else:
+			convolve_method = 0
+
+		if convolve_method == 0:
+			kernel = np.ones(kernel_size)/kernel_size
+			for key in branches.keys():
+				if key.startswith("scaler"):# and (fit[0]!=key):
+					branches[key] = np.convolve(branches[key], kernel, mode='same')
+
+		elif convolve_method == 1:
+			for key in branches.keys():
+				if key.startswith("scaler"):
+					max_l = np.stack([np.roll(branches[key], _) for _ in range(-kernel_size,0)],axis=0).max(0)
+					max_r = np.stack([np.roll(branches[key], _) for _ in range(1,kernel_size+1)],axis=0).max(0)
+					branches[key] = np.maximum(branches[key], np.minimum(max_l, max_r))
+					del max_l
+					del max_r
+
+		else:
+			print("Warning: convolution method {} is not defined. No convolution has been applied.".format(convolve_method))
+		
 	if verbosity:
 		print("loaded branches: {}".format(branches_needed))
 		print("shapes: {}".format([_.shape for _ in branches.values()]))
@@ -460,7 +493,14 @@ def main(args, suspend_show=False, colors={}):
 	# make bin array
 	edgeLo = fit_data.min() if fit[1] == -np.inf else fit[1]
 	edgeHi = fit_data.max() if fit[2] ==  np.inf else fit[2]
-	edges = np.linspace(edgeLo, edgeHi, nbins + 1)
+
+	# if xlog argument supplied at least twice, bins are calculated in log space.
+	# warning: fitting to log bins has not been confirmed to be accurate.
+	if xlog>1:
+		edges = np.logspace(math.log(edgeLo,10),math.log(edgeHi,10),nbins+1)
+	else:
+		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
+
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	counts, edges = np.histogram(fit_data, edges)
 
@@ -542,7 +582,7 @@ def main(args, suspend_show=False, colors={}):
 
 	# if showing or saving the figure, we need to compose it
 	if show or fig_out:
-		
+
 		# display data
 		if "d" in display:
 			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="data{}".format(label_suffix))
@@ -591,21 +631,24 @@ def main(args, suspend_show=False, colors={}):
 		if ylim is not None:
 			plt.ylim(top=ylim)
 
-		plt.legend()
-		plt.xlabel(fit[0])
-		plt.ylabel("counts")
 		plt.title(FIGURE_TITLE.format(
 			run=run_id,
 			branch=fit[0],
 			chi2=chi2/ndof,
 			rfs=fit_model.rfs(),
 		))
+			
+		plt.legend()
 
+		plt.xlabel(fit[0])
+		plt.ylabel("counts")
+		
 		# apply axis scaling
 		if xlog:
 			plt.xscale("log")
 		if ylog:
 			plt.yscale("log")
+
 		
 	# save the figure if specified
 	if fig_out:
@@ -705,6 +748,7 @@ if __name__ == '__main__':
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("--m"  ,type=str,dest="model",help="model to use: model_id,calibration_file")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
+	parser.add_argument("--con",type=int,default=[0],nargs="+",dest="convolve",help="scaler convolution (default none); kernel_size [, type]")
 
 	# fitting arguments
 	parser.add_argument("--bins",type=int,default=0,dest="nbins",help="number of bins to use")
@@ -715,7 +759,7 @@ if __name__ == '__main__':
 	# display arguments
 	parser.add_argument("--d",type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
 	parser.add_argument("--ylim",type=float,help="upper y limit on plot")
-	parser.add_argument("-x",dest="xlog",action="store_true",help="sets x axis of figure to log scale")
+	parser.add_argument("-x",dest="xlog",default=0,action="count",help="sets x axis of figure to log scale")
 	parser.add_argument("-y",dest="ylog",action="store_true",help="sets y axis of figure to log scale")
 	parser.add_argument("-s",dest="show",action="store_false",help="don't show figure as pyplot window")
 	parser.add_argument("--l",type=str,default="",dest='label',help="custom label")

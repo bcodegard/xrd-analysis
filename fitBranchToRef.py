@@ -263,6 +263,13 @@ def main(args, suspend_show=False, colors={}):
 	else:
 		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed}
 
+	# convolve scalers for cuts
+	kernel_size = 12
+	kernel = np.ones(kernel_size)/kernel_size
+	for key in branches.keys():
+		if key.startswith("scaler"):# and (fit[0]!=key):
+			branches[key] = np.convolve(branches[key], kernel, mode='same')
+
 	if verbosity:
 		print("loaded branches: {}".format(branches_needed))
 		print("shapes: {}".format([_.shape for _ in branches.values()]))
@@ -747,7 +754,7 @@ def main(args, suspend_show=False, colors={}):
 
 		# display root result
 		if "r" in display:
-			plt.plot(midpoints, meta(midpoints,*qopt), "g-", label="fit{}".format(label_suffix))
+			plt.plot(midpoints, meta(midpoints,*qopt), color=colors.get("r","g"), ls="-", label="fit{}".format(label_suffix))
 
 		# # todo: can work out error on modeled counts
 		# #       using full covariance and some gross calculus
@@ -1014,7 +1021,8 @@ if __name__ == '__main__':
 		arg_sets.append(this_set)
 
 
-		COLOR_SEQ = "kmbrcy"
+		COLOR_SEQ   = "kmbrcy"
+		COLOR_SEQ_2 = ["g","darkred","darkblue"]
 		
 		# call main with each set of arguments in turn,
 		# additionally communicating that each call is
@@ -1024,7 +1032,7 @@ if __name__ == '__main__':
 			main(
 				this_args,
 				suspend_show = True,
-				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
+				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i], "r":COLOR_SEQ_2[i]},
 			)
 
 		# show figure with all calls' data
