@@ -8,8 +8,10 @@ __version__ = "0.0"
 
 
 import math
-
-
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import matplotlib.gridspec as gridspec
 
 def bin_count_from_n_data(n_data, factor=4, min_bins=25, max_bins=1000):
 	n_bins = math.ceil(factor*math.sqrt(n_data))
@@ -21,66 +23,71 @@ def bin_count_from_n_data(n_data, factor=4, min_bins=25, max_bins=1000):
 
 
 
-# # matplotlib utilities
-# # figure dumping / loading breaks some things
-# # deprecated until issue can be resolved
+def display2d(
+		xdata, ydata,
+		xbins, ybins,
+		xlabel=False, ylabel=False,
+		density=False,
 
-# def stack_axes(donors, recipient, inherit_legend=True, inherit_labels=0, inherit_title=0):
-# 	"""copies and merges contents of donors into recipient. assumes recipient starts empty."""
+		cmap="inferno",
+		norm="log",
+		vmin=None,
+		vmax=None,
 
-# 	# copy lines
-# 	for donor in donors:
+		):
 
-# 		print(len(donor.get_lines()))
+	counts, xe, ye = np.histogram2d(
+		xdata,ydata,
+		[np.array(xbins),np.array(ybins)],
+		density=density,
+	)
 
-# 		for line in donor.get_lines():
+	gs = gridspec.GridSpec(2,2,width_ratios=[3,1],height_ratios=[1,3])
 
-# 			# recipient.plot(*line.get_data())
-# 			# cline = recipient.get_lines()[-1]
+	# fig, ax = plt.subplots(2,2)
 
-# 			# cline = matplotlib.lines.Line2D(*line.get_data(orig=False))
-# 			cline = matplotlib.lines.Line2D(*line.get_data(orig=True),axes=recipient)
-# 			recipient.add_line(cline)
+	if norm=="log":
+		norm=LogNorm(vmin,vmax)
 
-# 			cline.set_linestyle(line.get_linestyle())
-# 			cline.set_linewidth(line.get_linewidth())
-# 			cline.set_color(line.get_color())
-# 			cline.set_markersize(line.get_markersize())
-# 			cline.set_markerfacecolor(line.get_markerfacecolor())
-# 			cline.set_markerfacecoloralt(line.get_markerfacecoloralt())
-# 			cline.set_markeredgecolor(line.get_markeredgecolor())
-# 			cline.set_markeredgewidth(line.get_markeredgewidth())
-# 			cline.set_dash_capstyle(line.get_dash_capstyle())
-# 			cline.set_dash_joinstyle(line.get_dash_joinstyle())
-# 			cline.set_solid_capstyle(line.get_solid_capstyle())
-# 			cline.set_solid_joinstyle(line.get_solid_joinstyle())
-# 			cline.set_marker(line.get_marker())
-# 			cline.set_drawstyle(line.get_drawstyle())
+	ax2d = plt.subplot(gs[2])
+	# image = ax2d.hist2d(
+	# 	xdata,ydata,
+	# 	[xbins, ybins],
+	# 	cmap=cmap,
+	# 	norm=norm,
+	# )
+	# image = ax2d.imshow(
+	# 	counts.swapaxes(0,1),
+	# 	cmap,
+	# 	norm,
+	# 	aspect="auto",
+	# 	interpolation="none",
+	# 	origin='lower',
+	# 	extent=[xbins[0], xbins[-1], ybins[0], ybins[-1]],
+	# 	)
+	image = ax2d.pcolor(
+		xbins,
+		ybins,
+		counts.swapaxes(0,1),
+		shading=None,
+		cmap=cmap,
+		norm=norm,
+		)
+	if xlabel:ax2d.set_xlabel(xlabel)
+	if ylabel:ax2d.set_ylabel(ylabel)
+	ax2d.set_xscale("log")
+	ax2d.set_yscale("log")
 
-# 	# copy legends
-# 	if inherit_legend:
-# 		labels_found = []
-# 		handles = []
-# 		labels = []
-# 		for donor in donors:
-# 			this_handles,this_labels = donor.get_legend_handles_labels()
-# 			for il,l in enumerate(this_labels):
-# 				if l not in labels_found:
-# 					handles.append(this_handles[il])
-# 					labels.append(l)
-# 					labels_found.append(l)
-# 		recipient.legend(handles, labels)
+	axpx = plt.subplot(gs[0])
+	axpx.hist(xdata, xbins, density, histtype='step', align='mid', orientation='vertical', log=True, color='k')
+	axpx.sharex(ax2d)
+	axpx.set_xscale("log")
 
-# 	# copy labels
-# 	if inherit_labels is not None:
-# 		donor = donors[inherit_labels]
-# 		recipient.set_xlabel(donor.get_xlabel())
-# 		recipient.set_ylabel(donor.get_ylabel())
+	axpy = plt.subplot(gs[3])
+	axpy.hist(ydata, ybins, density, histtype='step', align='mid', orientation='horizontal', log=True, color='k')
+	axpy.sharey(ax2d)
+	axpy.set_yscale("log")
 
-# 	# copy title
-# 	if inherit_title is not None:
-# 		donor = donors[inherit_title]
-# 		recipient.set_title(donor.get_title())
+	plt.show()
 
-# 	# return modified recipient
-# 	return recipient
+
