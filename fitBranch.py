@@ -62,6 +62,7 @@ PEAK_PARAMETERS = ["mu", "xpeak"]
 
 # display string templates
 FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}\n{rfs}"
+FIGURE_TITLE_NOFIT = "run {run}, {branch}"
 
 # csv file type lists
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
@@ -284,12 +285,21 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
 
+	# branches not to be requested from root file
+	# must have other defined behavior
+	branches_special = {"entry","Entry"}
+
+	# load non-special branches from file
 	if run.endswith(EXT_ROOT):
-		branches = fileio.load_branches(run, branches_needed)
+		branches = fileio.load_branches(run, branches_needed - branches_special)
 	else:
-		# print([_ for _ in np.load(run).keys()])
-		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed}
-		# print(branches.keys())
+		# load branches from .npz file
+		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed - branches_special}
+
+	# add special branches
+	if {"entry","Entry"} & branches_needed:
+		for which in list({"entry","Entry"} & branches_needed):
+			branches[which] = np.arange(list(branches.values())[0].shape[0])
 
 	# convolve scalers
 	kernel_size = convolve[0]
@@ -860,7 +870,11 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
 			for component in fit_model_components[1:]:
 				fit_model = fit_model + component
 		else:
-			raise ValueError(ERR_NO_FIT_MODEL)
+			return [
+				[nbins, edges, midpoints, counts],
+				[None, 0, None],
+				[None, None, None, None, None, None, None],
+			]
 
 		# fit the binned data
 		popt, perr, chi2, ndof, pcov = fit_model.fit(midpoints, counts, need_cov = True)
@@ -919,25 +933,23 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	smono_bounds, n_bg_parameters, fit_model    = model_data
 	popt, perr, chi2, ndof, cov, xf_cov, xf_par = fit_results
 
-	label_suffix=", {}".format(label) if label else ""
+	label_suffix="{}".format(label) if label else ""
+	if popt:
+		label_suffix = ", {}".format(label_suffix)
 
 	# if showing or saving the figure, we need to compose it
 	if show or fig_out:
 
 		# display data
 		if "d" in display:
-			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="data{}".format(label_suffix))
+			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if popt else "",label_suffix))
 
 		# display root result
-		if "r" in display:
+		if ("r" in display) and popt:
 			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
-		# # display root result +- errors
-		# if "e" in display:
-		# 	...
-
 		# display peaks
-		if "p" in display:
+		if ("p" in display) and popt:
 			first_peak = True
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
@@ -974,15 +986,20 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		if ylim is not None:
 			plt.ylim(top=ylim)
 
-		plt.title(FIGURE_TITLE.format(
-			run=run_id,
-			branch=fit[0],
-			chi2=chi2/ndof,
-			rfs=fit_model.rfs(),
-		))
+		if popt:
+			plt.title(FIGURE_TITLE.format(
+				run=run_id,
+				branch=fit[0],
+				chi2=chi2/ndof,
+				rfs=fit_model.rfs(),
+			))
+		else:
+			plt.title(FIGURE_TITLE_NOFIT.format(
+				run=run_id,
+				branch=fit[0],
+			))
 			
 		plt.legend()
-
 		plt.xlabel(fit[0])
 		plt.ylabel("counts")
 		
