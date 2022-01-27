@@ -28,6 +28,8 @@ DATA_LOC   = "./data/root/scintillator/Run{}.root"
 CALIB_LOC  = "./data/calibration/{}.csv"
 FIG_LOC    = "./figs/{}.png"
 RESULT_LOC = "./data/fits/{}.csv"
+RS_LOC     = "./data/fits/{}.csv" # for now, reference spectra are not separate from general fit results.
+XF_LOC     = "./data/xf/{}.csv"
 
 # known file extensions
 EXT_ROOT = ".root"
@@ -63,6 +65,7 @@ FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}\n{rfs}"
 
 # csv file type lists
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
+XF_CSV_TYPELIST  = [str, int, float]
 
 
 
@@ -211,6 +214,12 @@ def extract_arguments(args):
 	else:
 		smono = split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
 
+	# --rs
+	ref_spec = args["rs"]
+	
+	# --xf
+	ref_xf = args["xf"]
+
 	# display args
 	display = args["display"]
 	ylim = args["ylim"]
@@ -222,6 +231,7 @@ def extract_arguments(args):
 	# output args
 	file_out = args["out"]
 	fig_out  = args["fig"]
+	xf_out   = args["xfout"]
 	verbosity = args["v"]
 
 	# print raw and processed args if verbosity >= 2
@@ -242,6 +252,8 @@ def extract_arguments(args):
 		print("background : {}".format(background))
 		print("gaus       : {}".format(gaus))
 		print("smono      : {}".format(smono))
+		print("ref_spec   : {}".format(ref_spec))
+		print("ref_xf     : {}".format(ref_xf))
 		print("display    : {}".format(display))
 		print("ylim       : {}".format(ylim))
 		print("xlog       : {}".format(xlog))
@@ -250,13 +262,14 @@ def extract_arguments(args):
 		print("label      : {}".format(label))
 		print("file_out   : {}".format(file_out))
 		print("fig_out    : {}".format(fig_out))
+		print("xf_out     : {}".format(xf_out))
 		print("verbosity  : {}".format(verbosity))
 		print("")
 
 	return [
 		[run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
-		[background,gaus,smono,nbins],
-		[display,ylim,xlog,ylog,show,label,file_out,fig_out,],
+		[background,gaus,smono,nbins,ref_spec,ref_xf],
+		[display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out],
 		verbosity,
 	]
 
@@ -266,7 +279,7 @@ def extract_arguments(args):
 # get calibration and apply model
 # calculate and apply filters
 # finish with final data to analyse, and concise info for display and log
-def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,nbins):
+def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds):
 	# load data
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
@@ -498,106 +511,394 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 # fit the fit function to binned fit_data
 # acquire parameters' best fit and errors
 def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
-	background,gaus,smono,nbins = vars_fit
 
+	# unpack vars
+	background,gaus,smono,nbins,ref_spec,ref_xf = vars_fit
+
+	# process reference spectrum arguments
+	if ref_spec:
+		fit_to_reference = True
+		rs_file,_,rs_run = ref_spec.partition(',')
+		if not (os.sep in rs_file):
+			rs_file = RS_LOC.format(rs_file)
+		rs_run = int(rs_run) if rs_run else None
+	
+		xf_order = int(ref_xf[0])
+		XF_PARAM_GUESS = [0.0, 1.0, 0.0]
+		for iv,value in enumerate(ref_xf[1:]):
+			XF_PARAM_GUESS[2-xf_order+iv]=value
+	else:
+		fit_to_reference = False
+
+	# make bin array
 	# auto generate bin count if not specified
 	if nbins == 0:
 		nbins = bin_count_from_ndata(fit_data.shape[0])
 		if verbosity:
 			print("automatic bin count = {}".format(nbins))
 			print("")
-
 	fit_branch = fit[0]
 	fit_bounds = [fit[1], fit[2]]
-
-	# make bin array
 	edgeLo = fit_data.min() if fit_bounds[0] == -np.inf else fit_bounds[0]
 	edgeHi = fit_data.max() if fit_bounds[1] ==  np.inf else fit_bounds[1]
-
 	# if xlog argument supplied at least twice, bins are calculated in log space.
 	# warning: fitting to log bins has not been confirmed to be accurate.
 	if xlog>1:
 		edges = np.logspace(math.log(edgeLo,10),math.log(edgeHi,10),nbins+1)
 	else:
 		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
-
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	counts, edges = np.histogram(fit_data, edges)
 
-	# list of components for fit model
-	fit_model_components = []
+	if ref_spec:
+		
+		# load reference spectrum and choose best entry
+		spectra = [_ for _ in fileio.load_fits(rs_file) if _.fit_branch == fit_branch]
+		if rs_run is not None:
+			found_match = False
+			for spectrum in spectra:
+				if spectrum.run == rs_run:
+					ref = spectrum
+					found_match = True
+					break
+			if not found_match:
+				raise ValueError("no spectrum found in file {} with branch {} and run {}".format(rs_file, fit[0], rs_run))
+		else:
+			ref = spectra[0]
 
-	# add background components
-	if "q" in background:
-		fit_model_components.append(model.quadratic())
-	elif "l" in background:
-		fit_model_components.append(model.line())
-	elif "c" in background:
-		fit_model_components.append(model.constant())
-	if "e" in background:
-		fit_model_components.append(model.exponential())
+		# compose fit model
+		# relevant properties:
+		# 	background
+		# 	ngaus, gaus_names, gaus_bounds
+		# 	nsmono, smono_order, smono_bounds
 
-	# store number of parameters used by background components
-	n_bg_parameters = sum([_.npars for _ in fit_model_components])
+		# create components
+		fit_model_components = []
+		if "q" in ref.background:
+			fit_model_components.append(model.quadratic())
+		elif "l" in ref.background:
+			fit_model_components.append(model.line())
+		elif "c" in ref.background:
+			fit_model_components.append(model.constant())
+		if "e" in ref.background:
+			fit_model_components.append(model.exponential())
+		for bounds in ref.gaus_bounds:
+			fit_model_components.append(model.gaus(bounds))
+		for bounds in ref.smono_bounds:
+			fit_model_components.append(model.smono(bounds))
 
-	# add gaussians
-	gaus_names = []
-	for ig,g in enumerate(gaus):
-		gaus_names.append(g[0])
-		# re-arrange so as to have mu bounds specified first
-		this_bounds = [[g[5],g[6]], [g[1],g[2]], [g[3],g[4]]]
-		fit_model_components.append(model.gaussian(this_bounds))
+		# compose model
+		if verbosity>1:
+			print("fit model components and bounds, from reference spectrum")
+			print("")
+			for component in fit_model_components:
+				print(component.arch.name)
+				print(component.pnames)
+				print(component.bounds)
+				print("")
+		if len(fit_model_components):
+			fit_model = fit_model_components[0]
+			for component in fit_model_components[1:]:
+				fit_model = fit_model + component
+		else:
+			raise ValueError(ERR_NO_FIT_MODEL)
 
-	# add suppressed monomials
-	smono_bounds = []
-	for ism,sm in enumerate(smono):
-		this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
-		smono_bounds.append(this_bounds)
-		order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
-		fit_model_components.append(model.smono(this_bounds))
+		# use model with reference spectrum parameters to guess a total magnitude factor
+		sum_ref  = fit_model(midpoints, *ref.popt).sum()
+		sum_data = counts.sum()
+		relative_magnitude = sum_data / sum_ref
 
-	# compose model
-	if len(fit_model_components):
-		fit_model = fit_model_components[0]
-		for component in fit_model_components[1:]:
+		# components on top of reference spectrum
+		n_postref_params = 0
+		# # add gaussians
+		gaus_names = []
+		for ig,g in enumerate(gaus):
+			gaus_names.append(g[0])
+			# re-arrange so as to have mu bounds specified first
+			this_bounds = [[g[5],g[6]], [g[1],g[2]], [g[3],g[4]]]
+			component = model.gaussian(this_bounds)
+			fit_model_components.append(component)
 			fit_model = fit_model + component
-	else:
-		raise ValueError(ERR_NO_FIT_MODEL)
+			n_postref_params += 3
 
-	# fit the binned data
-	popt, perr, chi2, ndof, cov = fit_model.fit(midpoints, counts, need_cov = True)
-	if verbosity:
-		line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
-		print("")
-		print("model performance: chi2/ndof = {}/{} = {}".format(
-			round(chi2,DISPLAY_PRECISION),
-			ndof,
-			round(chi2/ndof,DISPLAY_PRECISION),
-			))
-		print("model parameters")
-		print(line_template.format("f","par","lo bnd","hi bnd","popt","perr"))
-		ipar = 0
-		for ic,component in enumerate(fit_model_components):
-			for ip,pname in enumerate(component.pnames):
-				print(line_template.format(
-					ic,
-					pname,
-					round(component.bounds[ip][0],DISPLAY_PRECISION),
-					round(component.bounds[ip][1],DISPLAY_PRECISION),
-					round(popt[ipar],DISPLAY_PRECISION),
-					round(perr[ipar],DISPLAY_PRECISION),
+		# # test model integrity
+		# plt.plot(midpoints, fit_model(midpoints, *ref.popt), 'r-')
+		# plt.plot(midpoints, counts, 'k.')
+		# plt.show()
+
+		# todo: base bounds on user input and/or x rescaling
+		XF_PARAM_BOUNDS = [[-0.1, 0.1], [0.5, 2.0], [-np.inf, np.inf]]
+		XF_PARAM_NAMES = ["a", "b", "c"]
+		PNAMES_XF  = ["mu","xpeak"]
+		# PNAMES_XF  = ["mu"]
+		PNAMES_MAG = ["a", "b", "c", "a0", "a1", "a2",  "q"]
+		def make_xf_lambda(a,a0,order):
+			if order == 2:
+				lam = lambda q:q[0]*(a**2)/a0 + q[1]*a + q[2]
+				rfs = "({}*[0] + {}*[1] + [2])".format((a**2)/a0, a)
+			elif order == 1:
+				lam = lambda q:q[0]*a + q[1]
+				rfs = "({}*[0] + [1])".format(a)
+			elif order == 0:
+				lam = lambda q:a + q[0]
+				rfs = "({} + [0])".format(a)
+			return lam,rfs
+
+		# calculate number of paramters that aren't being transformed
+		n_other_params = 0
+		for ip,p in enumerate(fit_model.pnames):
+
+			is_postref = ip >= (len(fit_model.pnames) - n_postref_params)
+
+			# not free if transforming it
+			if (p in PNAMES_XF) and not is_postref:
+				continue
+
+			# # still need to keep fixed parameters as parameters!
+			# # not free if lo,hi bounds are identical
+			# if fit_model.bounds[ip][0] == fit_model.bounds[ip][1]:
+			# 	continue
+
+			# all checks pass -> is free
+			n_other_params += 1
+
+		n_params = n_other_params + 1 + xf_order
+		i_next_param = 1 + xf_order
+
+		# initialize meta model properties
+		xfp     = []
+		xfp_rfs = []
+		qbounds = XF_PARAM_BOUNDS[2-xf_order:]
+		qnames  = XF_PARAM_NAMES[2-xf_order:]
+		q0      = XF_PARAM_GUESS[2-xf_order:]
+
+		# construct meta model properties
+		for ip,p in enumerate(fit_model.pnames):
+
+			is_postref = ip >= (len(fit_model.pnames) - n_postref_params)
+
+			# location param -> xf via polynomial
+			if (p in PNAMES_XF) and not is_postref:
+				lam,rfs = make_xf_lambda(ref.popt[ip], 100000, xf_order)
+				xfp.append(lam)
+				xfp_rfs.append(rfs)
+
+			# else -> assign to param in q if free, constant if fixed
+			else:
+				bounds = fit_model.bounds[ip]
+
+				# fixed parameter
+				if bounds[0] == bounds[1]:
+					q0.append(bounds[0])
+
+				# not fixed parameter
+				else:
+
+					# postref (not part of reference spectrum) -> guess = bounds midpoint
+					if is_postref:
+						q0.append(0.5 * (fit_model.bounds[ip][0] + fit_model.bounds[ip][1]))
+
+					# not postref: take from reference spectrum, maybe with scaling
+					else:
+						# if p represents a magnitude parameter, apply scaling to q0 entry
+						if p in PNAMES_MAG:
+							q0.append(ref.popt[ip] * relative_magnitude)
+						else:
+							q0.append(ref.popt[ip])
+
+				# # TEMP hacking order parameter
+				# if p == "n":
+				# 	bounds = [1.0,4.0]
+
+				unitvec = np.zeros(n_params, dtype=bool)
+				unitvec[i_next_param]=True
+				xfp.append(unitvec)
+				qbounds.append(bounds)
+				qnames.append(p)
+				xfp_rfs.append(None)
+				i_next_param += 1
+
+		# create meta model
+		meta = model.metamodel(
+			fit_model,
+			xfp     = xfp,
+			xfp_rfs = xfp_rfs,
+			xfx     = False,
+		)
+
+		# display reference model and meta model parameter info
+		if verbosity>1:
+			print("reference model parameters (p)")
+			line_template = "{:>8} | {:<32} | {:<32.32s} | {:<32.32s}"
+			print(line_template.format("pname", "reference spectrum bounds", "xfp_rfs", "xfp"))
+			print(line_template.format(" ", " ", " ", " "))
+			for ip,p in enumerate(fit_model.pnames):
+				print(line_template.format(str(p), str(fit_model.bounds[ip]), str(xfp_rfs[ip]), str(xfp[ip])))
+			print("")
+			print("meta model parameters (q)")
+			print(line_template.format("pname", "bounds", "guess", ""))
+			print(line_template.format(" ", " ", " ", " "))
+			for iq,q in enumerate(qnames):
+				print(line_template.format(str(q), str(qbounds[iq]), str(q0[iq]), ""))
+			print("")
+
+			print("meta model root function string, full")
+			print(meta.rfs(False))
+			print("")
+
+		# # test metamodel integrity
+		# plt.plot(midpoints, fit_model(midpoints, *ref.popt), 'r-')
+		# plt.plot(midpoints, meta(midpoints, *q0), 'b-')
+		# plt.plot(midpoints, counts, 'k.')
+		# plt.show()
+
+		# fit binned data with meta -> (popt, perr, chi2, ndod, cov) for parameters *q of metamodel
+		qopt, qerr, chi2, ndof, qcov = model.fit_hist_with_root(
+			meta.fn,
+			midpoints,
+			counts,
+			qbounds,
+			q0,
+			meta.rfs(False),
+			True
+			)
+
+		# value and covariance of transformation parameters
+		# this is all we need in order to apply the same transformation to other measured peaks
+		xf_cov = qcov[:xf_order+1,:xf_order+1]
+		xf_par = qopt[:xf_order+1]
+
+		# print results
+		if verbosity:
+			line_template = "{:>8} | {:>10} | {:>10} | {:>12} | {:>12}"
+			print("")
+			print("meta model performance: chi2/ndof = {}/{} = {}".format(
+				round(chi2,DISPLAY_PRECISION),
+				ndof,
+				round(chi2/ndof,DISPLAY_PRECISION),
 				))
-				ipar += 1
-		if verbosity >= 2:
-			print("\nfull covariance matrix")
-			print(cov)
-		print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
-		print(np.sqrt(np.diag(cov)))
+			print("meta model parameters")
+			print(line_template.format("par","lo bnd","hi bnd","popt","perr"))
+			for iq,q in enumerate(qnames):
+				print(line_template.format(
+					q,
+					round(qbounds[iq][0],DISPLAY_PRECISION),
+					round(qbounds[iq][1],DISPLAY_PRECISION),
+					round(qopt[iq],DISPLAY_PRECISION),
+					round(qerr[iq],DISPLAY_PRECISION),
+				))
+
+			print("\ncovariance of transformation parameters {}".format(','.join(qnames[:xf_order+1])))
+			print(xf_cov)
+			if verbosity >= 2:
+				print("\nfull covariance matrix")
+				print(qcov)
+			print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
+			print(np.sqrt(np.diag(qcov)))
+
+		# # test result integrity
+		# plt.plot(midpoints, fit_model(midpoints, *ref.popt), 'r-', label="reference")
+		# plt.plot(midpoints, meta(midpoints, *q0)           , 'b-', label="q0")
+		# plt.plot(midpoints, meta(midpoints, *qopt)         , 'g-', label="qopt")
+		# plt.plot(midpoints, counts, 'k.')
+		# plt.legend()
+		# plt.show()
+
+		# calculate popt from meta model qopt
+		popt = meta.transform_parameters(qopt)
+		perr = False
+		pcov = False
+
+		smono_bounds = ref.smono_bounds
+		n_bg_parameters = ref.npars_bg
+
+		# todo: calculate value and errors for each location parameter based on xf_order
+		#       and potentially errors on all parameters in popt
+		# 
+		#       not needed now, since we only use this routine to match LYSO to LYSO
+		#       to get an area transformation. All we need is a,b,c and their covariance
+		# 
+		#       will want to implement this later if we want to compare other spectra
+		#       via this method, or to measure LYSO's peaks
+
+	else:
+		# list of components for fit model
+		fit_model_components = []
+
+		# add background components
+		if "q" in background:
+			fit_model_components.append(model.quadratic())
+		elif "l" in background:
+			fit_model_components.append(model.line())
+		elif "c" in background:
+			fit_model_components.append(model.constant())
+		if "e" in background:
+			fit_model_components.append(model.exponential())
+
+		# store number of parameters used by background components
+		n_bg_parameters = sum([_.npars for _ in fit_model_components])
+
+		# add gaussians
+		gaus_names = []
+		for ig,g in enumerate(gaus):
+			gaus_names.append(g[0])
+			# re-arrange so as to have mu bounds specified first
+			this_bounds = [[g[5],g[6]], [g[1],g[2]], [g[3],g[4]]]
+			fit_model_components.append(model.gaussian(this_bounds))
+
+		# add suppressed monomials
+		smono_bounds = []
+		for ism,sm in enumerate(smono):
+			this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
+			smono_bounds.append(this_bounds)
+			order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
+			fit_model_components.append(model.smono(this_bounds))
+
+		# compose model
+		if len(fit_model_components):
+			fit_model = fit_model_components[0]
+			for component in fit_model_components[1:]:
+				fit_model = fit_model + component
+		else:
+			raise ValueError(ERR_NO_FIT_MODEL)
+
+		# fit the binned data
+		popt, perr, chi2, ndof, pcov = fit_model.fit(midpoints, counts, need_cov = True)
+		if verbosity:
+			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
+			print("")
+			print("model performance: chi2/ndof = {}/{} = {}".format(
+				round(chi2,DISPLAY_PRECISION),
+				ndof,
+				round(chi2/ndof,DISPLAY_PRECISION),
+				))
+			print("model parameters")
+			print(line_template.format("f","par","lo bnd","hi bnd","popt","perr"))
+			ipar = 0
+			for ic,component in enumerate(fit_model_components):
+				for ip,pname in enumerate(component.pnames):
+					print(line_template.format(
+						ic,
+						pname,
+						round(component.bounds[ip][0],DISPLAY_PRECISION),
+						round(component.bounds[ip][1],DISPLAY_PRECISION),
+						round(popt[ipar],DISPLAY_PRECISION),
+						round(perr[ipar],DISPLAY_PRECISION),
+					))
+					ipar += 1
+			if verbosity >= 2:
+				print("\nfull covariance matrix")
+				print(pcov)
+			print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
+			print(np.sqrt(np.diag(pcov)))
+
+			xf_cov = False
+			xf_par = False
 
 	return [
 		[nbins, edges, midpoints, counts],
 		[smono_bounds, n_bg_parameters, fit_model],
-		[popt, perr, chi2, ndof, cov],
+		[popt, perr, chi2, ndof, pcov, xf_cov, xf_par],
 	]
 
 
@@ -611,12 +912,12 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
 def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
 	
 	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
-	background,gaus,smono,nbins                                                 = vars_fit
-	display,ylim,xlog,ylog,show,label,file_out,fig_out                          = vars_display
+	background,gaus,smono,nbins,ref_spec,ref_xf                                 = vars_fit
+	display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                   = vars_display
 
-	nbins, edges, midpoints, counts          = bin_data
-	smono_bounds, n_bg_parameters, fit_model = model_data
-	popt, perr, chi2, ndof, cov              = fit_results
+	nbins, edges, midpoints, counts             = bin_data
+	smono_bounds, n_bg_parameters, fit_model    = model_data
+	popt, perr, chi2, ndof, cov, xf_cov, xf_par = fit_results
 
 	label_suffix=", {}".format(label) if label else ""
 
@@ -641,20 +942,22 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
 					par = popt[ip]
-					stat_err = perr[ip]
-
+					if perr:
+						stat_err_str = "\xb1{}".format(round(perr[ip],DISPLAY_PRECISION))
+					else:
+						stat_err_str = ""
 					if model_id == -1:
-						label_center = "{}={}\xb1{}".format(
+						label_center = "{}={}".format(
 							p,
 							round(par,DISPLAY_PRECISION),
-							round(stat_err,DISPLAY_PRECISION)
+							stat_err_str,
 						)
 					else:
 						syst_err = par * bc_fit[6]
 						label_center = "{}={}\xb1{}\xb1{}".format(
 							p,
 							round(par,DISPLAY_PRECISION),
-							round(stat_err,DISPLAY_PRECISION),
+							stat_err_str,
 							round(syst_err,DISPLAY_PRECISION),
 						)
 
@@ -706,6 +1009,50 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	if show:
 		if not suspend_show:
 			plt.show()
+
+	# output transformation parameters and their covariance
+	# and necessary idenfitication information (fit branch, xf_order)
+	# todo: output a bit more than that
+	if ref_spec and xf_out:
+
+		# process reference spectrum arguments
+		# TODO this is duplicated; need to handle these variables better
+		if ref_spec:
+			fit_to_reference = True
+			rs_file,_,rs_run = ref_spec.partition(',')
+			if not (os.sep in rs_file):
+				rs_file = RS_LOC.format(rs_file)
+			rs_run = int(rs_run) if rs_run else None
+		
+			xf_order = int(ref_xf[0])
+			XF_PARAM_GUESS = [0.0, 1.0, 0.0]
+			for iv,value in enumerate(ref_xf[1:]):
+				XF_PARAM_GUESS[2-xf_order+iv]=value
+		else:
+			fit_to_reference = False
+
+		# just filename: save in ./data/xf/
+		if not (os.sep in xf_out):
+			csv_file = XF_LOC.format(xf_out)
+		else:
+			csv_file = xf_out
+
+		# compose new entry
+		this_contents = [
+			fit[0],
+			xf_order,
+			*xf_par,
+			*xf_cov.flatten(),
+		]
+
+		# update the specifed file with new entry
+		fileio.update_csv(
+			csv_file,
+			this_contents,
+			XF_CSV_TYPELIST,
+			0,
+			backup=None,
+		)
 
 	# save details to a csv file if requested
 	if file_out:
@@ -777,11 +1124,11 @@ def main(args, suspend_show=False, colors={}):
 	# stage 0: args
 	vars_data, vars_fit, vars_display, verbosity = extract_arguments(args)
 	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
-	background,gaus,smono,nbins                                                 = vars_fit
-	display,ylim,xlog,ylog,show,label,file_out,fig_out                          = vars_display
+	background,gaus,smono,nbins,ref_spec,ref_xf                                 = vars_fit
+	display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                   = vars_display
 
 	# stage 1: data
-	fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,nbins)
+	fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
 
 	# stage 2: fit
 	bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog)
@@ -816,6 +1163,14 @@ if __name__ == '__main__':
 	parser.add_argument("--g"   ,type=str,action='append',dest="gaus" ,help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
 	parser.add_argument("--s"   ,type=str,action='append',dest='smono',help="suppressed monomial: order, min,max xpeak, min,max c, min,max k")
 
+	# if --rs is not emtpy, fit to reference
+	# get all fit info from reference spectrum
+	# file may contain multiple entries. choose by:
+	#     1) identical fit branch
+	#     2) run number if specified, else first entry passing 1).
+	parser.add_argument("--rs",type=str,default="",help="file containing reference spectrum, and optionally which run to use the spectrum of")
+	parser.add_argument("--xf",type=float,default=2,nargs="+",help="order of area transformation, [0-2]. 0 = const. offset, 1 = linear, 2 = quadratic")
+
 	# display arguments
 	parser.add_argument("--d"   ,type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
 	parser.add_argument("--ylim",type=float,help="upper y limit on plot")
@@ -825,9 +1180,10 @@ if __name__ == '__main__':
 	parser.add_argument("--l"   ,type=str,default="",dest='label',help="custom label")
 
 	# output arguments
-	parser.add_argument("--out",type=str,default="",help="location to save fit results as csv file (appends if file exists)")
-	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
-	parser.add_argument("-v"   ,action='count',default=0,help="verbosity")
+	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
+	parser.add_argument("--fig"  ,type=str,default="",help="location to save figure as png image (overwrites if file exists)")
+	parser.add_argument("--xfout",type=str,default="",help="location to save transformation as csv file (appends if file exists)")
+	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
 
 	ARG_MULTI = "AND"
 
