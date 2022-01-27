@@ -107,6 +107,8 @@ def bin_count_from_ndata(ndata):
 	nraw = math.ceil(BIN_COUNT_MULT * math.sqrt(ndata))
 	return max([BIN_COUNT_MIN, nraw])
 
+# TODO switch to using a fit_result class during whole process
+#      and let the class, defined in fileio, handle data formatting.
 def csv_format_gaus(gaus):
 	"""flattens and formats gaussian names and bounds for CSV file"""
 	# gaus_names = []
@@ -141,12 +143,15 @@ def csv_format_cuts(cuts):
 
 
 
-# main
-def main(args, suspend_show=False, colors={}):
+# analysis stages
 
-
-	# stage 0: args
-	# extract and process arguments into local variables
+# stage 0: args
+# extract and process arguments into local variables
+# for now, function just returns list of args
+# TODO change to using instance of a class,
+#      which would be passed through the whole routine
+def extract_arguments(args):
+	"""extract and prrocess command line arguments"""
 
 	# run
 	try:
@@ -213,7 +218,6 @@ def main(args, suspend_show=False, colors={}):
 	ylog = args["ylog"]
 	show = args["show"]
 	label = args["label"]
-	label_suffix=", {}".format(label) if label else ""
 
 	# output args
 	file_out = args["out"]
@@ -227,6 +231,7 @@ def main(args, suspend_show=False, colors={}):
 			print(key,value)
 		print("\nprocessed args")
 		print("run        : {}".format(run))
+		print("run_id     : {}".format(run_id))
 		print("fit        : {}".format(fit))
 		print("cuts       : {}".format(cuts))
 		print("event_range: {}".format(event_range))
@@ -242,18 +247,26 @@ def main(args, suspend_show=False, colors={}):
 		print("xlog       : {}".format(xlog))
 		print("ylog       : {}".format(ylog))
 		print("show       : {}".format(show))
+		print("label      : {}".format(label))
 		print("file_out   : {}".format(file_out))
 		print("fig_out    : {}".format(fig_out))
 		print("verbosity  : {}".format(verbosity))
 		print("")
 
+	return [
+		[run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
+		[background,gaus,smono,nbins],
+		[display,ylim,xlog,ylog,show,label,file_out,fig_out,],
+		verbosity,
+	]
 
-	# stage 1: data
-	# load and and process branches from root files
-	# get calibration and apply model
-	# calculate and apply filters
-	# finish with final data to analyse, and concise info for display and log
 
+# stage 1: data
+# load and and process branches from root files
+# get calibration and apply model
+# calculate and apply filters
+# finish with final data to analyse, and concise info for display and log
+def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,nbins):
 	# load data
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
@@ -476,12 +489,16 @@ def main(args, suspend_show=False, colors={}):
 	del filters
 	del branches
 
+	return fit_data
 
-	# stage 2: fit
-	# bin fit_data
-	# parse fit function components and compose fit function
-	# fit the fit function to binned fit_data
-	# acquire parameters' best fit and errors
+
+# stage 2: fit
+# bin fit_data
+# parse fit function components and compose fit function
+# fit the fit function to binned fit_data
+# acquire parameters' best fit and errors
+def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
+	background,gaus,smono,nbins = vars_fit
 
 	# auto generate bin count if not specified
 	if nbins == 0:
@@ -490,9 +507,12 @@ def main(args, suspend_show=False, colors={}):
 			print("automatic bin count = {}".format(nbins))
 			print("")
 
+	fit_branch = fit[0]
+	fit_bounds = [fit[1], fit[2]]
+
 	# make bin array
-	edgeLo = fit_data.min() if fit[1] == -np.inf else fit[1]
-	edgeHi = fit_data.max() if fit[2] ==  np.inf else fit[2]
+	edgeLo = fit_data.min() if fit_bounds[0] == -np.inf else fit_bounds[0]
+	edgeHi = fit_data.max() if fit_bounds[1] ==  np.inf else fit_bounds[1]
 
 	# if xlog argument supplied at least twice, bins are calculated in log space.
 	# warning: fitting to log bins has not been confirmed to be accurate.
@@ -574,11 +594,31 @@ def main(args, suspend_show=False, colors={}):
 		print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
 		print(np.sqrt(np.diag(cov)))
 
+	return [
+		[nbins, edges, midpoints, counts],
+		[smono_bounds, n_bg_parameters, fit_model],
+		[popt, perr, chi2, ndof, cov],
+	]
 
-	# stage 3: display and output
-	# draw a figure if showing or saving it
-	# show and/or save the figure
-	# save info to csv if specified
+
+# stage 3: display and output
+# draw a figure if showing or saving it
+# show and/or save the figure
+# save info to csv if specified
+# TODO split this functionality up into two parts
+#      a function to display fit data and results,
+#      and the save functionality handled by the class instance
+def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
+	
+	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
+	background,gaus,smono,nbins                                                 = vars_fit
+	display,ylim,xlog,ylog,show,label,file_out,fig_out                          = vars_display
+
+	nbins, edges, midpoints, counts          = bin_data
+	smono_bounds, n_bg_parameters, fit_model = model_data
+	popt, perr, chi2, ndof, cov              = fit_results
+
+	label_suffix=", {}".format(label) if label else ""
 
 	# if showing or saving the figure, we need to compose it
 	if show or fig_out:
@@ -732,6 +772,26 @@ def main(args, suspend_show=False, colors={}):
 
 
 
+def main(args, suspend_show=False, colors={}):
+
+	# stage 0: args
+	vars_data, vars_fit, vars_display, verbosity = extract_arguments(args)
+	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
+	background,gaus,smono,nbins                                                 = vars_fit
+	display,ylim,xlog,ylog,show,label,file_out,fig_out                          = vars_display
+
+	# stage 1: data
+	fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,nbins)
+
+	# stage 2: fit
+	bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog)
+
+	# stage 3: display and output
+	display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
+
+
+
+
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(
@@ -757,17 +817,17 @@ if __name__ == '__main__':
 	parser.add_argument("--s"   ,type=str,action='append',dest='smono',help="suppressed monomial: order, min,max xpeak, min,max c, min,max k")
 
 	# display arguments
-	parser.add_argument("--d",type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
+	parser.add_argument("--d"   ,type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
 	parser.add_argument("--ylim",type=float,help="upper y limit on plot")
-	parser.add_argument("-x",dest="xlog",default=0,action="count",help="sets x axis of figure to log scale")
-	parser.add_argument("-y",dest="ylog",action="store_true",help="sets y axis of figure to log scale")
-	parser.add_argument("-s",dest="show",action="store_false",help="don't show figure as pyplot window")
-	parser.add_argument("--l",type=str,default="",dest='label',help="custom label")
+	parser.add_argument("-x"    ,dest="xlog",default=0,action="count",help="sets x axis of figure to log scale")
+	parser.add_argument("-y"    ,dest="ylog",action="store_true",help="sets y axis of figure to log scale")
+	parser.add_argument("-s"    ,dest="show",action="store_false",help="don't show figure as pyplot window")
+	parser.add_argument("--l"   ,type=str,default="",dest='label',help="custom label")
 
 	# output arguments
 	parser.add_argument("--out",type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
-	parser.add_argument("-v",action='count',default=0,help="verbosity")
+	parser.add_argument("-v"   ,action='count',default=0,help="verbosity")
 
 	ARG_MULTI = "AND"
 
