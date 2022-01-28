@@ -171,7 +171,8 @@ def extract_arguments(args):
 		# could also switch to using full filename instead of ID in calibration entries.
 
 	# fit
-	fit = split_with_defaults(args["fit"], [None,-np.inf,np.inf], [str,float,float])
+	fits = [split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
+	fit = fits[0]
 
 	# --cut
 	if args["cut"] is None:
@@ -222,7 +223,7 @@ def extract_arguments(args):
 	ref_xf = args["xf"]
 
 	# display args
-	display = args["display"]
+	disp = args["disp"]
 	ylim = args["ylim"]
 	xlog = args["xlog"]
 	ylog = args["ylog"]
@@ -243,6 +244,7 @@ def extract_arguments(args):
 		print("\nprocessed args")
 		print("run        : {}".format(run))
 		print("run_id     : {}".format(run_id))
+		print("fits       : {}".format(fits))
 		print("fit        : {}".format(fit))
 		print("cuts       : {}".format(cuts))
 		print("event_range: {}".format(event_range))
@@ -255,7 +257,7 @@ def extract_arguments(args):
 		print("smono      : {}".format(smono))
 		print("ref_spec   : {}".format(ref_spec))
 		print("ref_xf     : {}".format(ref_xf))
-		print("display    : {}".format(display))
+		print("disp       : {}".format(disp))
 		print("ylim       : {}".format(ylim))
 		print("xlog       : {}".format(xlog))
 		print("ylog       : {}".format(ylog))
@@ -268,9 +270,9 @@ def extract_arguments(args):
 		print("")
 
 	return [
-		[run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
+		[run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
 		[background,gaus,smono,nbins,ref_spec,ref_xf],
-		[display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out],
+		[disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out],
 		verbosity,
 	]
 
@@ -925,9 +927,9 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
 #      and the save functionality handled by the class instance
 def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
 	
-	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
-	background,gaus,smono,nbins,ref_spec,ref_xf                                 = vars_fit
-	display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                   = vars_display
+	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
+	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
+	disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                        = vars_display
 
 	nbins, edges, midpoints, counts             = bin_data
 	smono_bounds, n_bg_parameters, fit_model    = model_data
@@ -941,15 +943,15 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	if show or fig_out:
 
 		# display data
-		if "d" in display:
+		if "d" in disp:
 			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if popt else "",label_suffix))
 
 		# display root result
-		if ("r" in display) and popt:
+		if ("r" in disp) and popt:
 			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
 		# display peaks
-		if ("p" in display) and popt:
+		if ("p" in disp) and popt:
 			first_peak = True
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
@@ -974,7 +976,7 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 						)
 
 					# display statistical errors
-					if "e" in display:
+					if "e" in disp:
 						label_error = "\xb1stat err" if first_peak else None
 						plt.axvline(popt[ip]+perr[ip], ls='--', color=colors.get("pe","r"), label=label_error)
 						plt.axvline(popt[ip]-perr[ip], ls='--', color=colors.get("pe","r"), )
@@ -1140,18 +1142,59 @@ def main(args, suspend_show=False, colors={}):
 
 	# stage 0: args
 	vars_data, vars_fit, vars_display, verbosity = extract_arguments(args)
-	run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
-	background,gaus,smono,nbins,ref_spec,ref_xf                                 = vars_fit
-	display,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                   = vars_display
+	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
+	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
+	disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                        = vars_display
 
-	# stage 1: data
-	fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
+	# >1 fit branches: 2d comparisons
+	# TODO add fitting per branch and plotting fits within comparisons
+	if len(fits) > 1:
 
-	# stage 2: fit
-	bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog)
+		n_ds = len(fits)
+		
+		# need same cuts for all -> cut on all fit data ranges as well
+		cuts_all = cuts + [_ + ['and'] for _ in fits]
 
-	# stage 3: display and output
-	display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
+		# fetch each datasets
+		pData = [procure_data(verbosity,run,run_id,_,cuts_all,event_range,convolve,model_id,model_cal_file,raw_bounds) for _ in fits]
+		pLo = [_.min() if fits[i][1] == -np.inf else fits[i][1] for i,_ in enumerate(pData)]
+		pHi = [_.max() if fits[i][2] ==  np.inf else fits[i][2] for i,_ in enumerate(pData)]
+
+		if not nbins:
+			nbins = 50
+		if xlog>1:
+			pBins = [np.logspace(math.log(pLo[i],10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
+		else:
+			pBins = [np.linspace(pLo[i], pHi[i], nbins+1) for i in range(n_ds)]
+
+		display.pairs2d(
+			pData,
+			pBins,
+			[xlog]*n_ds,
+			[_[0] for _ in fits],
+			cmap="afmhot",
+			cbad="grey",
+			norm="log" if ylog else None,
+		)
+
+		plt.suptitle("{}: {}\n{}".format(run, fits, cuts))
+
+		if show:
+			plt.show()
+
+
+
+
+
+	else:
+		# stage 1: data
+		fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
+
+		# stage 2: fit
+		bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog)
+
+		# stage 3: display and output
+		display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
 
 
 
@@ -1167,7 +1210,7 @@ if __name__ == '__main__':
 
 	# data arguments
 	parser.add_argument("run"  ,type=str,help="file location, name, or number")
-	parser.add_argument("fit"  ,type=str,help="branch to fit: branch,min,max")
+	parser.add_argument("fit"  ,type=str,nargs="+",help="branch to fit: branch,min,max")
 	parser.add_argument("--cut",type=str,action='append',help="branch to cut on: branch,min,max")
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("--m"  ,type=str,dest="model",help="model to use: model_id,calibration_file")
@@ -1189,7 +1232,7 @@ if __name__ == '__main__':
 	parser.add_argument("--xf",type=float,default=2,nargs="+",help="order of area transformation, [0-2]. 0 = const. offset, 1 = linear, 2 = quadratic")
 
 	# display arguments
-	parser.add_argument("--d"   ,type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
+	parser.add_argument("--d"   ,type=str,default="drp",dest='disp',help="display: any combinration of (d)ata (r)oot (p)eaks (e)rror")
 	parser.add_argument("--ylim",type=float,help="upper y limit on plot")
 	parser.add_argument("-x"    ,dest="xlog",default=0,action="count",help="sets x axis of figure to log scale")
 	parser.add_argument("-y"    ,dest="ylog",action="store_true",help="sets y axis of figure to log scale")
