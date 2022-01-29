@@ -123,6 +123,13 @@ def main(
 		exclude_source_peaks=False,
 		require_id=False,
 
+		colors=False,
+		labels={},
+		plot_area = False,
+		plot_area_t1 = False,
+		plot_energy = False,
+		plot_area_xf = False,
+
 		show=True,
 
 		):
@@ -204,7 +211,21 @@ def main(
 			print(line_template.format(peak_id[i],this_area,this_area_err,this_area_t1,this_area_err_t1,this_jac))
 		print("")
 
+	area = np.array(area)
+	area_err = np.array(area_err)
+	area_t1 = np.array(area_t1)
+	area_err_t1 = np.array(area_err_t1)
+	# if plot_area_xf:
+	# 	plt.errorbar(area, area_t1-area, area_err_t1, area_err, ls="", color="k", marker=".")
+	# 	plt.xlabel("area before xf")
+	# 	plt.ylabel("delta from xf")
+	# 	plt.show()
 
+	# if plot_area_t1:
+	# 	plt.errorbar(range(len(area_t1)), area_t1, area_err_t1, color='k', ls='', marker='.')
+	# 	plt.xlabel("peak, entry number")
+	# 	plt.ylabel("transformed peak area (pVs)")
+	# 	plt.show()
 
 	# convert a(t2), aerr(t2) to E, Eerr
 
@@ -241,6 +262,34 @@ def main(
 	energy     = np.array(energy    )
 	energy_err = np.array(energy_err)
 
+	# if plot_energy:
+	# 	plt.errorbar(range(len(energy)), energy, energy_err, color='k', ls='', marker='.')
+	# 	plt.xlabel("peak, entry number")
+	# 	plt.ylabel("peak energy (KeV)")
+	# 	plt.show()
+
+	plt.subplots(1,3)
+	ax1 = plt.subplot(1,3,1)
+	ax2 = plt.subplot(1,3,2, sharey=ax1)
+	ax3 = plt.subplot(1,3,3)
+	for i,(data, err, handle) in enumerate([(area, area_err, "area (pVs)"), (area_t1, area_err_t1, "transformed area (pVs)"), (energy, energy_err, "energy (KeV)")]):
+		plt.subplot(1,3,i+1)
+		if plot_area:
+			colors_done = set()
+			if colors:
+				for ic,col in enumerate(colors):
+					plt.errorbar(ic, data[ic], err[ic], color=col, ls='', marker='.', label=labels[len(colors_done)] if not (col in colors_done) else "")
+					plt.xlabel("peak, entry number")
+					plt.ylabel("peak {}".format(handle))
+					colors_done |= {col}
+			else:
+				plt.errorbar(range(len(data)), data, err, color='k', ls='', marker='.')
+				plt.xlabel("peak, entry number")
+				plt.ylabel("peak {}".format(handle))
+	
+	plt.legend()
+	plt.show()
+
 	print("")
 	print("Those are the real, final, statistical errors on E!")
 	print("")
@@ -276,8 +325,10 @@ def get_peaks(spectra, branch, exclude_source_peaks=False, require_id=True):
 			area.append(    spec.popt_gaus[1 + 3*ig])
 			area_err.append(spec.perr_gaus[1 + 3*ig])
 
-			if g == "-":
-				this_peak_id = -1
+			# if g == "-":
+			if not g[1:].isnumeric():
+				# this_peak_id = -1
+				this_peak_id = g
 				energy.append(0.0)
 				energy_err.append(0.0)
 
@@ -414,22 +465,80 @@ if __name__ == '__main__':
 		)
 
 
+	plop = True
+	if plop:
 
-	fit_transformed = True
+		colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
+
+		bnl_runs_test = [3695,3696,3698,3700,3701,3704,3705,3706]
+		bnl_run_xf = 3695
+
+		file_src_spec  = './data/fits/src_nov22.csv'
+		file_test_spec = './data/fits/beam_{}.csv'#.format(bnl_run_test)
+		# file_test_spec = './data/fits/peaks_nolyso_{}.csv'.format(bnl_run_test)
+		# file_test_spec = './data/fits/beam_peak_{}.csv'.format(bnl_run_test)
+		# file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
+
+		ch = 1
+		branch="area_2988_{}".format(ch)
+
+		# file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
+		file_xf = './data/xf/xf_{}_to_3443.csv'.format(bnl_run_xf)
+		xf = fileio.load_xf(file_xf)[0]#[ch-1]
+
+		exclude_source_peaks=[
+			-1,  # unidentified
+			602, # subdominant
+			101,300,401, # 
+			400, # >200 KeV 
+			100, # Cs137 32KeV outlier
+		]
+
+		src_spec  = fileio.load_fits(file_src_spec)
+		test_specs = [fileio.load_fits(file_test_spec.format(_)) for _ in bnl_runs_test]
+		test_colors = sum([ [colors_per_run[i]]*len(spec) for i,spec in enumerate(test_specs) ],[])
+
+		energy_model = model.quad()
+		ec_results = calibrate_energy(
+			energy_model,
+			src_spec,
+			branch,
+			exclude_source_peaks=exclude_source_peaks,
+			show_calibrations=False,
+		)
+
+		main(
+			sum(test_specs,[]),
+			branch,
+			energy_model,
+			ec_results,
+			xf,
+			colors=test_colors,
+			labels=bnl_runs_test,
+			plot_area=True,
+			plot_area_t1=True,
+			plot_energy=True,
+			plot_area_xf=False,
+		)
+
+
+	fit_transformed = False
 	if fit_transformed:
 
-		bnl_run_test = 3681 # 3549
-		bnl_run_xf   = 3681 # 3537
+		bnl_run_test = 3705 # 3549
+		bnl_run_xf   = 3695 # 3537
 
 		file_src_spec  = './data/fits/src_nov22.csv'
 		# file_test_spec = './data/fits/peaks_nolyso_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/beam_peak_{}.csv'.format(bnl_run_test)
-		file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
+		# file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
+		file_test_spec = './data/fits/beam_{}.csv'.format(bnl_run_test)
 
-		ch = 2
+		ch = 1
 		branch="area_2988_{}".format(ch)
 
-		file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
+		# file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
+		file_xf = './data/xf/xf_{}_to_3443.csv'.format(bnl_run_xf)
 		xf = fileio.load_xf(file_xf)[0]#[ch-1]
 
 		exclude_source_peaks=[
@@ -458,6 +567,8 @@ if __name__ == '__main__':
 			energy_model,
 			ec_results,
 			xf,
+			plot_area=True,
+			plot_area_xf=False,
 		)
 
 

@@ -936,7 +936,7 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	popt, perr, chi2, ndof, cov, xf_cov, xf_par = fit_results
 
 	label_suffix="{}".format(label) if label else ""
-	if popt:
+	if not (popt is False):
 		label_suffix = ", {}".format(label_suffix)
 
 	# if showing or saving the figure, we need to compose it
@@ -944,19 +944,19 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 
 		# display data
 		if "d" in disp:
-			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if popt else "",label_suffix))
+			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if not (popt is False) else "",label_suffix))
 
 		# display root result
-		if ("r" in disp) and popt:
+		if ("r" in disp) and not (popt is False):
 			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
 		# display peaks
-		if ("p" in disp) and popt:
+		if ("p" in disp) and not (popt is False):
 			first_peak = True
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
 					par = popt[ip]
-					if perr:
+					if not (perr is False):
 						stat_err_str = "\xb1{}".format(round(perr[ip],DISPLAY_PRECISION))
 					else:
 						stat_err_str = ""
@@ -988,12 +988,12 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		if ylim is not None:
 			plt.ylim(top=ylim)
 
-		if popt:
+		if not (popt is False):
 			plt.title(FIGURE_TITLE.format(
 				run=run_id,
 				branch=fit[0],
-				chi2=chi2/ndof,
-				rfs=fit_model.rfs(),
+				chi2=chi2/ndof if ndof else 0.0,
+				rfs=fit_model.rfs() if fit_model else "undef",
 			))
 		else:
 			plt.title(FIGURE_TITLE_NOFIT.format(
@@ -1163,7 +1163,7 @@ def main(args, suspend_show=False, colors={}):
 		if not nbins:
 			nbins = 50
 		if xlog>1:
-			pBins = [np.logspace(math.log(pLo[i],10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
+			pBins = [np.logspace(math.log(max((pLo[i]),(pData[i][pData[i]>0]).min()),10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
 		else:
 			pBins = [np.linspace(pLo[i], pHi[i], nbins+1) for i in range(n_ds)]
 
@@ -1179,11 +1179,20 @@ def main(args, suspend_show=False, colors={}):
 
 		plt.suptitle("{}: {}\n{}".format(run, fits, cuts))
 
+		# save the figure if specified
+		if fig_out:
+			
+			# just filename: save in ./figs/
+			if not (os.sep in fig_out):
+				fig_file = FIG_LOC.format(fig_out)
+			else:
+				fig_file = fig_out
+
+			# save the figure to an image file
+			plt.savefig(fig_file)
+
 		if show:
 			plt.show()
-
-
-
 
 
 	else:
