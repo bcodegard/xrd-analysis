@@ -229,6 +229,7 @@ def extract_arguments(args):
 	ylog = args["ylog"]
 	show = args["show"]
 	label = args["label"]
+	density = args["density"]
 
 	# output args
 	file_out = args["out"]
@@ -263,6 +264,7 @@ def extract_arguments(args):
 		print("ylog       : {}".format(ylog))
 		print("show       : {}".format(show))
 		print("label      : {}".format(label))
+		print("density    : {}".format(density))
 		print("file_out   : {}".format(file_out))
 		print("fig_out    : {}".format(fig_out))
 		print("xf_out     : {}".format(xf_out))
@@ -272,7 +274,7 @@ def extract_arguments(args):
 	return [
 		[run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
 		[background,gaus,smono,nbins,ref_spec,ref_xf],
-		[disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out],
+		[disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out],
 		verbosity,
 	]
 
@@ -522,7 +524,7 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 # parse fit function components and compose fit function
 # fit the fit function to binned fit_data
 # acquire parameters' best fit and errors
-def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
+def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 
 	# unpack vars
 	background,gaus,smono,nbins,ref_spec,ref_xf = vars_fit
@@ -560,12 +562,16 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog):
 	else:
 		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
-	counts, edges = np.histogram(fit_data, edges)
+	# TODO: better handling of density: should be display-only, not at data level.
+	print("WARNING: using density mode. Currently this only is supported for display. Fitting density data may lead to undefined behavior.")
+	counts, edges = np.histogram(fit_data, edges, density=density)
 
 	if ref_spec:
 		
 		# load reference spectrum and choose best entry
-		spectra = [_ for _ in fileio.load_fits(rs_file) if _.fit_branch == fit_branch]
+		print("WARNING: skipping branch identity check due to channel re-assignment. May cause issues.")
+		# TODO better handling of branch identity. May need to remove this check entirely, but care needed to examine effects.
+		spectra = [_ for _ in fileio.load_fits(rs_file)]# if _.fit_branch == fit_branch]
 		if rs_run is not None:
 			found_match = False
 			for spectrum in spectra:
@@ -929,7 +935,7 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
-	disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                        = vars_display
+	disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out                        = vars_display
 
 	nbins, edges, midpoints, counts             = bin_data
 	smono_bounds, n_bg_parameters, fit_model    = model_data
@@ -1144,7 +1150,7 @@ def main(args, suspend_show=False, colors={}):
 	vars_data, vars_fit, vars_display, verbosity = extract_arguments(args)
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
-	disp,ylim,xlog,ylog,show,label,file_out,fig_out,xf_out                        = vars_display
+	disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out                        = vars_display
 
 	# >1 fit branches: 2d comparisons
 	# TODO add fitting per branch and plotting fits within comparisons
@@ -1200,7 +1206,7 @@ def main(args, suspend_show=False, colors={}):
 		fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
 
 		# stage 2: fit
-		bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog)
+		bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density)
 
 		# stage 3: display and output
 		display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
@@ -1246,6 +1252,7 @@ if __name__ == '__main__':
 	parser.add_argument("-x"    ,dest="xlog",default=0,action="count",help="sets x axis of figure to log scale")
 	parser.add_argument("-y"    ,dest="ylog",action="store_true",help="sets y axis of figure to log scale")
 	parser.add_argument("-s"    ,dest="show",action="store_false",help="don't show figure as pyplot window")
+	parser.add_argument("-d"    ,dest="density",action="store_true",help="use density instead of counts for hist y axes")
 	parser.add_argument("--l"   ,type=str,default="",dest='label',help="custom label")
 
 	# output arguments

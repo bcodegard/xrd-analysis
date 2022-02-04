@@ -268,7 +268,6 @@ def main(
 	# 	plt.ylabel("peak energy (KeV)")
 	# 	plt.show()
 
-	plt.subplots(1,3)
 	ax1 = plt.subplot(1,3,1)
 	ax2 = plt.subplot(1,3,2, sharey=ax1)
 	ax3 = plt.subplot(1,3,3)
@@ -288,7 +287,8 @@ def main(
 				plt.ylabel("peak {}".format(handle))
 	
 	plt.legend()
-	plt.show()
+	if show:
+		plt.show()
 
 	print("")
 	print("Those are the real, final, statistical errors on E!")
@@ -319,14 +319,19 @@ def get_peaks(spectra, branch, exclude_source_peaks=False, require_id=True):
 
 		for ig,g in enumerate(spec.gaus_names):
 
-			if require_id and (g=="-"):
-				continue
+			if require_id:
+				if (g=="-"):
+					continue
+				if g.startswith("e"):
+					continue
+				if not g.startswith("x"):
+					continue
 
 			area.append(    spec.popt_gaus[1 + 3*ig])
 			area_err.append(spec.perr_gaus[1 + 3*ig])
 
 			# if g == "-":
-			if not g[1:].isnumeric():
+			if (not g[1:].isnumeric()) or (g.startswith('e')):
 				# this_peak_id = -1
 				this_peak_id = g
 				energy.append(0.0)
@@ -436,15 +441,18 @@ if __name__ == '__main__':
 	fit_direct = False
 
 	if fit_direct:
-		file_src_spec  = './data/fits/src_nov22.csv'
-		file_test_spec = './data/fits/pb_ka_nolyso_3443.csv'
-		branch="area_2988_2"
+		# file_src_spec  = './data/fits/src_nov22.csv'
+		# file_test_spec = './data/fits/pb_ka_nolyso_3443.csv'
+		file_src_spec  = './data/fits/nov11_src_ch1_NaI2_la.csv'
+		file_test_spec = './data/fits/nov11_ch1_IK.csv'
+		branch="area_2988_1"
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
-			101,300,401, # 
-			400, # >200 KeV 
-			100, # Cs137 32KeV outlier
+			101,300,401,400, # high energy 
+			# 200, # 31KeV Ba133
+			# 500, # 22KeV Cd109
+			# 100, # 32KeV Cs137
 		]
 		src_spec  = fileio.load_fits(file_src_spec)
 		energy_model = model.quad()
@@ -455,17 +463,29 @@ if __name__ == '__main__':
 			exclude_source_peaks=exclude_source_peaks,
 			show_calibrations=False,
 		)
+		colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
 		test_spec = fileio.load_fits(file_test_spec)
+		# print([_.popt_gaus for _ in test_spec])
+		test_colors = colors_per_run[:len(test_spec)]
+		labels = ["cs", "cd", "ba", "co", "am"]
 		main(
 			test_spec,
 			branch,
 			energy_model,
 			ec_results,
 			None,
+			require_id=False,
+			colors=test_colors,
+			labels=labels,
+			plot_area=False,
+			plot_area_t1=False,
+			plot_energy=False,
+			plot_area_xf=False,
+			# show=False,
 		)
 
 
-	plop = True
+	plop = False
 	if plop:
 
 		colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
@@ -522,24 +542,29 @@ if __name__ == '__main__':
 		)
 
 
-	fit_transformed = False
+	fit_transformed = True
 	if fit_transformed:
 
-		bnl_run_test = 3705 # 3549
-		bnl_run_xf   = 3695 # 3537
+		# bnl_run_test = 3705 # 3549
+		bnl_run_xf   = 3757 # 3537
 
 		file_src_spec  = './data/fits/src_nov22.csv'
 		# file_test_spec = './data/fits/peaks_nolyso_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/beam_peak_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
-		file_test_spec = './data/fits/beam_{}.csv'.format(bnl_run_test)
+		# file_test_spec = './data/fits/beam_{}.csv'.format(bnl_run_test)
+		file_test_spec = './data/fits/beam_j27_2g.csv'
+
+		# bnl_run_xf   = 3695 # 3537
+		# file_src_spec  = './data/fits/src_nov22.csv'
+		# file_test_spec = './data/fits/beam_j20_4g.csv'
 
 		ch = 1
 		branch="area_2988_{}".format(ch)
 
-		# file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
-		file_xf = './data/xf/xf_{}_to_3443.csv'.format(bnl_run_xf)
-		xf = fileio.load_xf(file_xf)[0]#[ch-1]
+		# # file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
+		# file_xf = './data/xf/xf_{}_to_3443_trunc.csv'.format(bnl_run_xf)
+		# xf = fileio.load_xf(file_xf)[0]#[ch-1]
 
 		exclude_source_peaks=[
 			-1,  # unidentified
@@ -556,20 +581,28 @@ if __name__ == '__main__':
 		ec_results = calibrate_energy(
 			energy_model,
 			src_spec,
-			branch,
+			"area_2988_1",
 			exclude_source_peaks=exclude_source_peaks,
 			show_calibrations=False,
 		)
 
-		main(
-			test_spec,
-			branch,
-			energy_model,
-			ec_results,
-			xf,
-			plot_area=True,
-			plot_area_xf=False,
-		)
+		colseq=["darkred","g","b"]
+		for i,bnl_run_xf in enumerate([3757, 3766, 3767]):
+			file_xf = './data/xf/xf_{}_to_3443_trunc.csv'.format(bnl_run_xf)
+			xf = fileio.load_xf(file_xf)[0]#[ch-1]
+			main(
+				test_spec,
+				branch,
+				energy_model,
+				ec_results,
+				xf,
+				plot_area=True,
+				plot_area_xf=False,
+				show=False,
+				colors=[colseq[i]]*15,
+				labels=[str(bnl_run_xf)],
+			)
+		plt.show()
 
 
 
