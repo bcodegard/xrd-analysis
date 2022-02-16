@@ -1169,7 +1169,7 @@ def main(args, suspend_show=False, colors={}):
 		if not nbins:
 			nbins = 50
 		if xlog>1:
-			pBins = [np.logspace(math.log(max((pLo[i]),(pData[i][pData[i]>0]).min()),10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
+			pBins = [np.logspace(math.log(min((pLo[i]),(pData[i][pData[i]>0]).min()),10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
 		else:
 			pBins = [np.linspace(pLo[i], pHi[i], nbins+1) for i in range(n_ds)]
 

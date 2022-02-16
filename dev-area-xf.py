@@ -125,6 +125,10 @@ def main(
 
 		colors=False,
 		labels={},
+		xlabel = False,
+		ylabels = [],
+		xax = False,
+
 		plot_area = False,
 		plot_area_t1 = False,
 		plot_energy = False,
@@ -269,25 +273,35 @@ def main(
 	# 	plt.show()
 
 	ax1 = plt.subplot(1,3,1)
-	ax2 = plt.subplot(1,3,2, sharey=ax1)
-	ax3 = plt.subplot(1,3,3)
+	ax2 = plt.subplot(1,3,2, sharex=ax1, sharey=ax1)
+	ax3 = plt.subplot(1,3,3, sharex=ax2, )
+
 	for i,(data, err, handle) in enumerate([(area, area_err, "area (pVs)"), (area_t1, area_err_t1, "transformed area (pVs)"), (energy, energy_err, "energy (KeV)")]):
 		plt.subplot(1,3,i+1)
 		if plot_area:
 			colors_done = set()
-			if colors:
+			if type(colors) in (list,tuple):
 				for ic,col in enumerate(colors):
 					plt.errorbar(ic, data[ic], err[ic], color=col, ls='', marker='.', label=labels[len(colors_done)] if not (col in colors_done) else "")
 					plt.xlabel("peak, entry number")
 					plt.ylabel("peak {}".format(handle))
 					colors_done |= {col}
 			else:
-				plt.errorbar(range(len(data)), data, err, color='k', ls='', marker='.')
-				plt.xlabel("peak, entry number")
-				plt.ylabel("peak {}".format(handle))
+				if colors:
+					col = colors
+					label = labels
+				else:
+					col = 'k'
+					label = None
+
+				if not xax:
+					xax = range(len(data))
+				plt.errorbar(xax, data, err, color=col, ls='', marker='.', label=label)
+				plt.xlabel(xlabel if xlabel else "entry number")
+				plt.ylabel((ylabels[i] if ylabels else "{}").format(handle))
 	
-	plt.legend()
 	if show:
+		plt.legend()
 		plt.show()
 
 	print("")
@@ -438,21 +452,22 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 if __name__ == '__main__':
 
 
-	fit_direct = False
+	fit_direct = True
 
 	if fit_direct:
 		# file_src_spec  = './data/fits/src_nov22.csv'
 		# file_test_spec = './data/fits/pb_ka_nolyso_3443.csv'
-		file_src_spec  = './data/fits/nov11_src_ch1_NaI2_la.csv'
-		file_test_spec = './data/fits/nov11_ch1_IK.csv'
-		branch="area_2988_1"
+		file_src_spec  = './data/fits/nov11_src_ch2_NaI1_la.csv'
+		# file_test_spec = './data/fits/nov11_ch1_IK.csv'
+		file_test_spec = './data/fits/rs_lyso_nov11_sat.csv'
+		branch="area_2988_2"
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
 			101,300,401,400, # high energy 
 			# 200, # 31KeV Ba133
-			# 500, # 22KeV Cd109
-			# 100, # 32KeV Cs137
+			500, # 22KeV Cd109
+			100, # 32KeV Cs137
 		]
 		src_spec  = fileio.load_fits(file_src_spec)
 		energy_model = model.quad()
@@ -463,6 +478,7 @@ if __name__ == '__main__':
 			exclude_source_peaks=exclude_source_peaks,
 			show_calibrations=False,
 		)
+
 		colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
 		test_spec = fileio.load_fits(file_test_spec)
 		# print([_.popt_gaus for _ in test_spec])
@@ -542,66 +558,152 @@ if __name__ == '__main__':
 		)
 
 
-	fit_transformed = True
+	fit_transformed = False
 	if fit_transformed:
 
 		# bnl_run_test = 3705 # 3549
-		bnl_run_xf   = 3757 # 3537
-
-		file_src_spec  = './data/fits/src_nov22.csv'
+		# bnl_run_xf   = 3757 # 3537
 		# file_test_spec = './data/fits/peaks_nolyso_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/beam_peak_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/peaks_pbka_jan19_{}.csv'.format(bnl_run_test)
 		# file_test_spec = './data/fits/beam_{}.csv'.format(bnl_run_test)
-		file_test_spec = './data/fits/beam_j27_2g.csv'
 
 		# bnl_run_xf   = 3695 # 3537
 		# file_src_spec  = './data/fits/src_nov22.csv'
 		# file_test_spec = './data/fits/beam_j20_4g.csv'
 
-		ch = 1
-		branch="area_2988_{}".format(ch)
-
 		# # file_xf = './data/xf/xf_lyso_req_{}_to_3443.csv'.format(bnl_run_xf)
 		# file_xf = './data/xf/xf_{}_to_3443_trunc.csv'.format(bnl_run_xf)
 		# xf = fileio.load_xf(file_xf)[0]#[ch-1]
 
+
+		# # xf to run 3443
+		# file_src_spec    = './data/fits/src_nov22.csv'
+		# file_test_spec   = './data/fits/beam_j27_2g.csv'
+		# file_xf_template = './data/xf/xf_{}_to_3443_unsat.csv'
+		# runs_xf = [3757, 3766, 3767]
+		# xfs = [fileio.load_xf(file_xf_template.format(run))[0] for run in runs_xf]
+		# native_calib = False
+		# channel_e_cal = "area_2988_1"
+
+		
+		# # xf to run 3356
+		# file_src_spec    = './data/fits/nov11_src_ch2_NaI1_la.csv'
+		# file_test_spec   = './data/fits/beam_j27_2g.csv'
+		# file_xf_template = './data/xf/xf_{}_to_3356_sat.csv'
+		# runs_xf = [3757, 3766, 3767]
+		# xfs = [fileio.load_xf(file_xf_template.format(run))[0] for run in runs_xf]
+		# native_calib = False
+		# channel_e_cal = "area_2988_2"
+
+
+		# xf to run 3356
+		file_src_spec    = './data/fits/nov11_src_ch2_NaI1_la.csv'
+		file_test_spec   = './data/fits/beam_j27_2g.csv'
+		# file_test_spec   = './data/fits/rs_lyso_nov11_sat.csv'
+		channel_e_cal = "area_2988_2"
+		# file_xf = "./data/xf/xf_jan27_to_nov11_unsat_v2.csv"
+		file_xf = "./data/xf/xf_jan27_to_nov11_sat.csv"
+
+		native_calib = False
+		# calibrate from same run
+		if native_calib:
+
+			runs_xf = [_ for _ in range(3753, 3767+1)]
+			events_per_run = [7505,9311,2206,4572,13668,3954,3203,1121,2509,2493,2455,1312,3994,8618,13083]
+			xfs = fileio.load_xf(file_xf)
+
+			# some runs have poor stats for this
+			exclude_runs = [3760]
+			if exclude_runs:
+				included = [not (_ in exclude_runs) for _ in runs_xf]
+				runs_xf        = [_ for i,_ in enumerate(runs_xf       ) if included[i]]
+				events_per_run = [_ for i,_ in enumerate(events_per_run) if included[i]]
+				xfs            = [_ for i,_ in enumerate(xfs           ) if included[i]]
+
+			thr=4000
+			run_colors = ['r' if _<thr else 'k' for _ in events_per_run]
+			below_thr = [_<thr for _ in events_per_run]
+
+		else:
+			# calibrate to a few specifc runs		
+			runs_xf_all = [_ for _ in range(3753, 3767+1)]
+
+			runs_xf = [3757, 3766, 3767]
+			included = [_ in runs_xf for _ in runs_xf_all]
+			xfs = [_ for i,_ in enumerate(fileio.load_xf(file_xf)) if included[i]]
+
+			# native_calib = False
+
+
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
-			101,300,401, # 
-			400, # >200 KeV 
-			100, # Cs137 32KeV outlier
+			101,300,401,400, # high energy 
+			# 200, # 31KeV Ba133
+			# 500, # 22KeV Cd109
+			# 100, # 32KeV Cs137
 		]
-
 		src_spec  = fileio.load_fits(file_src_spec)
-		test_spec = fileio.load_fits(file_test_spec)
-
 		energy_model = model.quad()
 		ec_results = calibrate_energy(
 			energy_model,
 			src_spec,
-			"area_2988_1",
+			channel_e_cal,
 			exclude_source_peaks=exclude_source_peaks,
 			show_calibrations=False,
 		)
 
-		colseq=["darkred","g","b"]
-		for i,bnl_run_xf in enumerate([3757, 3766, 3767]):
-			file_xf = './data/xf/xf_{}_to_3443_trunc.csv'.format(bnl_run_xf)
-			xf = fileio.load_xf(file_xf)[0]#[ch-1]
-			main(
-				test_spec,
-				branch,
-				energy_model,
-				ec_results,
-				xf,
-				plot_area=True,
-				plot_area_xf=False,
-				show=False,
-				colors=[colseq[i]]*15,
-				labels=[str(bnl_run_xf)],
-			)
+
+
+		ch = 1
+		branch="area_2988_{}".format(ch)
+		test_spec = fileio.load_fits(file_test_spec)
+		if native_calib:
+			colors_done = []
+			for i,xf in enumerate(xfs):
+				col = run_colors[i]
+				if not (col in colors_done):
+					label = "lyso event count {} {}".format("<" if below_thr[i] else ">", thr)
+					colors_done.append(col)
+				else:
+					label=None
+				main(
+					test_spec[i:i+1],
+					branch,
+					energy_model,
+					ec_results,
+					xf,
+					plot_area=True,
+					plot_area_xf=False,
+					show=False,
+					colors=run_colors[i],
+					labels=label,
+					xlabel="run number",
+					xax = [runs_xf[i]]*test_spec[i].ngaus,
+				)
+				plt.suptitle("LYSO calibration on same run")
+		else:
+			colseq=["darkred","g","b"]
+			for i,bnl_run_xf in enumerate(runs_xf):
+				# file_xf = file_xf_template.format(bnl_run_xf)
+				xf = xfs[i]
+				main(
+					test_spec,
+					branch,
+					energy_model,
+					ec_results,
+					xf,
+					plot_area=True,
+					plot_area_xf=False,
+					show=False,
+					colors=colseq[i],
+					labels="LYSO cal on run {}".format(bnl_run_xf),
+					xlabel="run number",
+					xax = sum([[_.run]*_.ngaus for _ in test_spec],[]),
+				)
+		plt.legend()
+		plt.gcf().set_size_inches(16,6)#,dpi=200)
 		plt.show()
 
 
