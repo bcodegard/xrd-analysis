@@ -304,7 +304,7 @@ def get_best_calibration(calib, branch, voltage, run, model_id, ard=False):
 		is_match = True
 
 		# check conditions for no match
-		if branch != entry[0]:
+		if (branch != entry[0]) and (branch is not None):
 			is_match = False
 		if (voltage != entry[1]) and (voltage is not None):
 			is_match = False

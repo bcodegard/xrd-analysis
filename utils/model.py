@@ -39,9 +39,22 @@ def fit_graph_with_root(
 	# scipy fit for parameter guess input to root fit
 	# no need for errors, as this is just used as a guess by root
 	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
+	perr = np.sqrt(np.diag(pcov))
+	chisq = ((func(xdata,*popt)-ydata)/yerr)**2
+
+	# print("")
+	# print("SCIPY popt")
+	# print('\n'.join(["{:>10.2f}".format(_) for _ in popt]))
+	# print("")
+	# print("SCIPY perr")
+	# print('\n'.join(["{:>10.2f}".format(_) for _ in perr]))
+	# print("")
+	# print("SCIPY chisq: {:>10.2f}".format(chisq.sum()))
+	# print("")
 
 	# initialize TGraphErrors
 	n_points = len(xdata)
+	# print(n_points, xdata, ydata, xerr, yerr)
 	graph = ROOT.TGraphErrors(n_points, xdata, ydata, xerr, yerr)
 
 	# initialize and fit TF1
@@ -88,6 +101,11 @@ def fit_hist_with_root(
 	lo = [_[0] for _ in bounds]
 	hi = [_[1] for _ in bounds]
 
+	# enfore p0 in bounds
+	for ip,p in enumerate(p0):
+		if p < lo[ip]:p0[ip]=lo[ip]
+		if p > hi[ip]:p0[ip]=hi[ip]
+
 	if skip_p0_improvement:
 		popt = np.array(p0)
 
@@ -102,7 +120,9 @@ def fit_hist_with_root(
 
 		else:
 			# scipy fit for parameter guess input to root fit
-			popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
+			sigma = np.sqrt(ydata)
+			popt, pcov = opt.curve_fit(func, xdata, ydata, p0, sigma, True, bounds=[lo,hi])
+			perr = np.sqrt(np.diag(pcov))
 
 	# root object initialization and fit
 	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
@@ -123,6 +143,14 @@ def fit_hist_with_root(
 	perr_root = [err[_] for _ in range(len(p0))]
 	chi2 = rf.GetChisquare()
 	ndof = rf.GetNDF()
+
+	# if not skip_p0_improvement:
+	# 	print("SCIPY popt, root popt")
+	# 	print('\n'.join(["{:>10.2f} | {:>10.2f}".format(*_) for _ in zip(popt, popt_root)]))
+	# 	print("")
+	# 	print("SCIPY perr, root perr")
+	# 	print('\n'.join(["{:>10.2f} | {:>10.2f}".format(*_) for _ in zip(perr, perr_root)]))
+	# 	print("")
 
 	results = (np.array(popt_root), np.array(perr_root), chi2, ndof)
 
@@ -795,6 +823,6 @@ shorthand = {
 # for referring to models via numerical ID
 # used to specify models in calibration
 models_by_id = {
-	0:powerlaw_plus_constant,
-	1:quadratic,
+	0:quadratic,
+	1:powerlaw_plus_constant,
 }

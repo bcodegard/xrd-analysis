@@ -230,6 +230,7 @@ def extract_arguments(args):
 	show = args["show"]
 	label = args["label"]
 	density = args["density"]
+	fill = args["fill"]
 
 	# output args
 	file_out = args["out"]
@@ -265,6 +266,7 @@ def extract_arguments(args):
 		print("show       : {}".format(show))
 		print("label      : {}".format(label))
 		print("density    : {}".format(density))
+		print("fill       : {}".format(fill))
 		print("file_out   : {}".format(file_out))
 		print("fig_out    : {}".format(fig_out))
 		print("xf_out     : {}".format(xf_out))
@@ -274,7 +276,7 @@ def extract_arguments(args):
 	return [
 		[run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds,],
 		[background,gaus,smono,nbins,ref_spec,ref_xf],
-		[disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out],
+		[disp,ylim,xlog,ylog,show,label,density,fill,file_out,fig_out,xf_out],
 		verbosity,
 	]
 
@@ -365,16 +367,23 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 
 		# load entries from model_cal_file
 		calibration_entries = fileio.load_calibration(model_cal_file)
+		print(model_cal_file)
+		print(calibration_entries)
 
 		# todo: get voltage from run. currently ignoring voltage.
 		# get best calibration for fit branch
 		ibc_fit,bc_fit = fileio.get_best_calibration(
 			calibration_entries,
-			fit[0],
+			# fit[0],
+			None, # ignore branch
 			None, # ignore voltage
 			run_id,
 			model_id,
+			ard=True,
 			)
+
+		# bc_fit[1] = bc_fit[1][2::-1] + bc_fit[1][3:]
+		# bc_fit[2] = bc_fit[2][2::-1] + bc_fit[2][3:]
 		
 		# error if no matching calibration found
 		if ibc_fit == -1:
@@ -412,10 +421,11 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 				# get best calibration for cut branch
 				ibc_cut,bc_cut = fileio.get_best_calibration(
 					calibration_entries,
-					cut[0],
+					None, # ignore branch
 					None, # ignore voltage
 					run_id,
 					model_id,
+					ard=True,
 					)
 
 				# error if no matching calibration found
@@ -446,15 +456,28 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 				cut[1] = cut_lo_new
 				cut[2] = cut_hi_new
 
+
+
 	# list of filters to apply (with and logic)
+	fit_data = branches[fit[0]]
 	filters = []
 	filters_or = []
 
 	# fit branch validation
 	if model_id != -1:
-		filters.append(this_model.ival(branches[fit[0]], *bc_fit[1]))
+		filters.append(this_model.val(branches[fit[0]], *bc_fit[1]))
 		if verbosity:
 			print("{} valid: {} / {} pass".format(fit[0], filters[-1].sum(), filters[-1].shape[0]))
+
+	# apply model to fit branch
+	if model_id != -1:
+		# print(fit_data[:10])
+		fit_data = this_model.fn(fit_data, *bc_fit[1])
+		branches[fit[0]] = fit_data
+		# print(fit_data[:10])
+		if verbosity:
+			print("applied model to filtered fit data")
+			print("")
 
 	# calculate bound filters
 	for i,cut in enumerate([fit] + cuts):
@@ -468,11 +491,17 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 		filter_group = filters if logic == "and" else filters_or
 
 		b,bLo,bHi = cut[:3]
+
+		if i==0:
+			br = fit_data
+		else:
+			br = branches[b]
+
 		if bLo != -np.inf:
-			filter_group.append(branches[b] >= bLo)
+			filter_group.append(br >= bLo)
 			print("{} >= {}: {} / {} pass".format(b,bLo,filter_group[-1].sum(), filter_group[-1].shape[0]))
 		if bHi != np.inf:
-			filter_group.append(branches[b] <= bHi)
+			filter_group.append(br <= bHi)
 			print("{} <= {}: {} / {} pass".format(b,bHi,filter_group[-1].sum(), filter_group[-1].shape[0]))
 
 	# turn filters_or into one filter, append to filters
@@ -489,7 +518,7 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 	# stack and compress filters; apply to get fit data
 	if filters:
 		ftr = np.all(np.stack(filters, axis=0), axis=0)
-		fit_data = branches[fit[0]][ftr]
+		fit_data = fit_data[ftr]
 		if verbosity:
 			if model_id == -1:
 				print("combined filter: {} / {} pass".format(ftr.sum(), ftr.shape[0]))
@@ -501,20 +530,25 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 		if verbosity:
 			print("no filters to apply")
 			print("")
-		fit_data = branches[fit[0]]
-
-	# apply model to fit branch
-	if model_id != -1:
-		fit_data = this_model.ifn(fit_data, *bc_fit[1])
-		if verbosity:
-			print("applied model to filtered fit data")
-			print("")
+		# fit_data = branches[fit[0]]
 
 	# clean up unneeded arrays
 	if filters:
 		del ftr
 	del filters
 	del branches
+
+	# print("fit data mean")
+	# print(fit_data.mean())
+	# print("")
+
+	# print("fit data segment means")
+	# sl = 5000
+	# sample_means = []
+	# for i in range(fit_data.size // sl):
+	# 	sample_means.append(fit_data[i*sl:(i+1)*sl].mean())
+	# print(sample_means)
+	# print("")
 
 	return fit_data
 
@@ -563,7 +597,8 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	# TODO: better handling of density: should be display-only, not at data level.
-	print("WARNING: using density mode. Currently this only is supported for display. Fitting density data may lead to undefined behavior.")
+	if density:
+		print("WARNING: using density mode. Currently this only is supported for display. Fitting density data may lead to undefined behavior.")
 	counts, edges = np.histogram(fit_data, edges, density=density)
 
 	if ref_spec:
@@ -597,7 +632,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		elif "l" in ref.background:
 			fit_model_components.append(model.line())
 		elif "c" in ref.background:
-			fit_model_components.append(model.constant())
+			fit_model_components.append(model.constant([[0,np.inf]]))
 		if "e" in ref.background:
 			fit_model_components.append(model.exponential())
 		for bounds in ref.gaus_bounds:
@@ -849,7 +884,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		elif "l" in background:
 			fit_model_components.append(model.line())
 		elif "c" in background:
-			fit_model_components.append(model.constant())
+			fit_model_components.append(model.constant([[0,np.inf]]))
 		if "e" in background:
 			fit_model_components.append(model.exponential())
 
@@ -913,6 +948,17 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 				print(pcov)
 			print("\nsquare root of diagonal of covariance matrix (should be equal to parameter errors)")
 			print(np.sqrt(np.diag(pcov)))
+			print("\nintegrated area of gaussians")
+			print("{} | {:<12} | {:<12} | {:<12}".format("i","c","sigma (bins)","integral = c*sigma*sqrt(2*pi)"))
+			bin_width = edges[1]-edges[0]
+			total_gaussian_integrals = 0
+			for ig,g in enumerate(gaus):
+				this_c        = popt[n_bg_parameters + 3*ig + 0]
+				this_sigma    = popt[n_bg_parameters + 3*ig + 2] / bin_width
+				this_integral = this_c * this_sigma * math.sqrt(math.pi*2)
+				total_gaussian_integrals += this_integral
+				print("{} | {:>12.2f} | {:>12.2f} | {:>12.2f}".format(ig, this_c, this_sigma, this_integral))
+			print("sum of integrals of gaussians: {:.2f}".format(total_gaussian_integrals))
 
 			xf_cov = False
 			xf_par = False
@@ -935,7 +981,7 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 	
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
-	disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out                        = vars_display
+	disp,ylim,xlog,ylog,show,label,density,fill,file_out,fig_out,xf_out                        = vars_display
 
 	nbins, edges, midpoints, counts             = bin_data
 	smono_bounds, n_bg_parameters, fit_model    = model_data
@@ -951,6 +997,8 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		# display data
 		if "d" in disp:
 			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if not (popt is False) else "",label_suffix))
+			if fill:
+				plt.fill_between(midpoints,counts,step='mid',alpha=fill,color=colors.get("d","k"))
 
 		# display root result
 		if ("r" in disp) and not (popt is False):
@@ -1150,7 +1198,7 @@ def main(args, suspend_show=False, colors={}):
 	vars_data, vars_fit, vars_display, verbosity = extract_arguments(args)
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
-	disp,ylim,xlog,ylog,show,label,density,file_out,fig_out,xf_out                        = vars_display
+	disp,ylim,xlog,ylog,show,label,density,fill,file_out,fig_out,xf_out                        = vars_display
 
 	# >1 fit branches: 2d comparisons
 	# TODO add fitting per branch and plotting fits within comparisons
@@ -1253,7 +1301,8 @@ if __name__ == '__main__':
 	parser.add_argument("-y"    ,dest="ylog",action="store_true",help="sets y axis of figure to log scale")
 	parser.add_argument("-s"    ,dest="show",action="store_false",help="don't show figure as pyplot window")
 	parser.add_argument("-d"    ,dest="density",action="store_true",help="use density instead of counts for hist y axes")
-	parser.add_argument("--l"   ,type=str,default="",dest='label',help="custom label")
+	parser.add_argument("--label" ,type=str,default="",dest='label',help="custom label")
+	parser.add_argument("--fill"  ,type=float,default=0.0,dest='fill',help="fill under histograms")
 
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
@@ -1298,7 +1347,7 @@ if __name__ == '__main__':
 		arg_sets.append(this_set)
 
 
-		COLOR_SEQ = "kmbrcy"
+		COLOR_SEQ = ["k","m","b","r","c","y",'tab:brown','darkred','magenta']
 		
 		# call main with each set of arguments in turn,
 		# additionally communicating that each call is
