@@ -16,7 +16,7 @@ import utils.data   as data
 
 
 
-test_branch_manager = True
+test_branch_manager = False
 if test_branch_manager:
 
 	test_file = '../xrd-analysis/data/root/scintillator/Run4039.root'
