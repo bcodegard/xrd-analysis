@@ -24,7 +24,7 @@ import utils.model   as model
 
 # filesystem locations
 # todo: use os.sep to support multiple platforms
-DATA_LOC   = "./data/root/scintillator/Run{}.root"
+DATA_LOC   = "../xrd-analysis/data/root/scintillator/Run{}.root"
 CALIB_LOC  = "./data/calibration/{}.csv"
 FIG_LOC    = "./figs/{}.png"
 RESULT_LOC = "./data/fits/{}.csv"

@@ -242,8 +242,8 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 
 			for b in branches_get:
 				this_array = branch_to_array(tree.arrays(b),b if which.get(b,False) else False,dtypes.get(b,float))
-				print(this_array.size)
-				print(this_array[:10])
+				# print(this_array.size)
+				# print(this_array[:10])
 
 				if first_key:
 					branches[b] = this_array
