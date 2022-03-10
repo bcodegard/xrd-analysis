@@ -61,7 +61,7 @@ DISPLAY_PRECISION = 3
 PEAK_PARAMETERS = ["mu", "xpeak"]
 
 # display string templates
-FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}\n{rfs}"
+FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}"
 FIGURE_TITLE_NOFIT = "run {run}, {branch}"
 
 # csv file type lists
@@ -795,10 +795,6 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 				print(line_template.format(str(q), str(qbounds[iq]), str(q0[iq]), ""))
 			print("")
 
-			print("meta model root function string, full")
-			print(meta.rfs(False))
-			print("")
-
 		# # test metamodel integrity
 		# plt.plot(midpoints, fit_model(midpoints, *ref.popt), 'r-')
 		# plt.plot(midpoints, meta(midpoints, *q0), 'b-')
@@ -812,7 +808,6 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 			counts,
 			qbounds,
 			q0,
-			meta.rfs(False),
 			True
 			)
 
@@ -1047,7 +1042,6 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 				run=run_id,
 				branch=fit[0],
 				chi2=chi2/ndof if ndof else 0.0,
-				rfs=fit_model.rfs() if fit_model else "undef",
 			))
 		else:
 			plt.title(FIGURE_TITLE_NOFIT.format(
