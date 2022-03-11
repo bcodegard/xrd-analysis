@@ -64,7 +64,7 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 		results = results + (odr_out.cov_beta, )
 	return results
 
-def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False):
+def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 	"""performs a fit on xdata,ydata assuming poisson errors on y and no errors on x"""
 
 	# get bounds into format expected
@@ -81,7 +81,8 @@ def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False):
 	# unsupported right now
 
 	# assume hist -> poisson errors on y
-	yerr = np.sqrt(ydata)
+	if yerr is None:
+		yerr = np.sqrt(ydata)
 	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, yerr, True, bounds=[lo,hi])
 	
 	perr  = np.sqrt(np.diag(pcov))
@@ -212,8 +213,10 @@ class model_single(object):
 	def guess(self, x, y):
 		return self.arch.parameter_guess_function(x,y,self.bounds)
 
-	def fit(self, xdata, ydata, need_cov=False):
-		return fit_hist(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), need_cov)
+	def fit(self, xdata, ydata, need_cov=False, p0=None, yerr=None, ):
+		if p0 is None:
+			p0 = self.guess(xdata, ydata)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, yerr)
 
 	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
 		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov)
@@ -294,8 +297,10 @@ class model_multiple(object):
 			p0 += c.guess(x,y)
 		return p0
 
-	def fit(self, xdata, ydata, need_cov=False):
-		return fit_hist(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), need_cov)
+	def fit(self, xdata, ydata, need_cov=False, p0=None):
+		if p0 is None:
+			p0 = self.guess(xdata, ydata)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov)
 
 	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
 		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov)

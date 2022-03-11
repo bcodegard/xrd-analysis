@@ -35,6 +35,18 @@ def rectify(array, radius):
 	max_r = np.stack([np.roll(array, _) for _ in range(1      , radius+1)],axis=0).max(0)
 	return np.maximum(array, np.minimum(max_l, max_r))
 
+def fix_monotonic(array, round_to=0, copy=True):
+	"""fixes inversions in array, which is supposed to be monotonic"""
+	anomalies = array[1:] < array[:-1]
+	differentials = array[:-1][anomalies] - array[1:][anomalies]
+	if not (round_to is None):
+		differentials = np.round(differentials, round_to)
+	if copy:
+		new_array = array.copy()
+	else:
+		new_array = array
+	new_array[1:][anomalies] += differentials
+	return new_array
 
 
 
@@ -103,6 +115,9 @@ class BranchManager(object):
 		# False: raise Error
 		self.tolerate_missing = tolerate_missing
 
+	def __len__(self):
+		test_key = list(self.keys)[0]
+		return self._get(test_key).shape[0]
 
 	def __getitem__(self, key_or_keys):
 		"""official method of external access to branches. allows for copying to protect original data."""
@@ -262,7 +277,7 @@ class BranchManager(object):
 			return masked_branches[key_or_keys]
 		# set: dict of key:branch
 		elif type(key_or_keys) is set:
-			return {key:value for key,value in masked_branches if key in key_or_keys}
+			return {key:value for key,value in masked_branches.items() if key in key_or_keys}
 		# other iterable: list of branches in order they appear in key_or_keys
 		else:
 			return [mask_branches[_] for _ in key_or_keys]
@@ -271,6 +286,20 @@ class BranchManager(object):
 
 
 # built-in mask methods
+
+def mask_entry_range(lo=0,hi=np.inf):
+	def mask(manager):
+		lo_enf = max([lo,0])
+		hi_enf = min([hi,len(manager)])
+		pieces = []
+		if lo_enf > 0:
+			pieces.append(np.zeros(lo_enf))
+		if hi_enf > lo_enf:
+			pieces.append(np.ones(hi_enf-lo_enf))
+		if hi_enf < len(manager):
+			pieces.append(np.zeros(len(manager)-hi_enf))
+		return np.concatenate(pieces).astype(bool)
+	return mask
 
 def mask_all(*masks):
 	"""logical_all of masks"""
@@ -298,6 +327,13 @@ def cut(branch, lo=-np.inf, hi=np.inf):
 
 # built-in bud methods
 
+def differentiate_branch(branch, suffix="deriv"):
+	"""calculates difference between each entry and the previous
+	first entry in the new branch is difference between first and last entries in the input"""
+	def bud(manager):
+		return {add_suffix(branch,suffix):manager[branch]-np.roll(manager[branch],1)}
+	return bud
+
 def convolve_branch(branch, kernel, suffix=None):
 	"""convolve a branch with a kernel. integerl kernel will be converted to normalized flat kernel."""
 	if type(kernel) is int:
@@ -312,11 +348,36 @@ def rectify_branch(branch, radius, suffix=None):
 		return {add_suffix(branch,suffix):rectify(manager[branch],radius)}
 	return bud
 
-def rectify_scalers(radius=12, suffix=None, match="scaler_"):
+def rectify_scaler(radius=12, suffix=None, match="scaler_"):
 	"""apply recfification to all branches whose name starts with "scaler_" (or different string if specified.)"""
 	def bud(manager):
 		return {add_suffix(_,suffix):rectify(manager[_],radius) for _ in manager.keys if _.startswith(match)}
 	return bud
 
+def fix_monotonic_branch(branch, suffix):
+	"""fixes instances where value of branch is smaller than that of previous entry"""
+	def bud(manager):
+		return {add_suffix(branch,suffix):rectify(manager[branch],radius)}
+	return bud
 
+def fix_monotonic_timestamp(suffix=None, match="timestamp_"):
+	"""apply monotonic fix to all branches starting with "timestamp_" (or different string if specified)"""
+	def bud(manager):
+		return {add_suffix(_,suffix):fix_monotonic(manager[_]) for _ in manager.keys if _.startswith(match)}
+	return bud
+
+def count_passing(mask,new_key):
+	"""returns a branch with an integer index tracking how many events up to this point passed the mask"""
+	def bud(manager):
+		passing = mask(manager)
+		return {new_key:np.cumsum(passing)}
+	return bud
+
+def subtract_first(branch,suffix=None):
+	def bud(manager):
+		return {add_suffix(branch,suffix):manager[branch]-manager[branch][0]}
+	return bud
+
+def bud_entry(manager):
+	return {"entry":np.arange(len(manager))}
 
