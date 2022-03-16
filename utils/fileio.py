@@ -25,7 +25,7 @@ import numpy as np
 ROOTKEY_DEFAULT_MODE = 'last'
 ROOTKEY_DEFAULT_MODE_TEMPLATE = 'Events;'
 ROOTKEY_DEFAULT_KEY='Events;1'
-ROOTKEY_DEFAULT_INDEX = [-1]
+ROOTKEY_DEFAULT_INDEX = -1
 
 # list of types that csv entries aren't allowed to be
 CSV_TYPES_FORBIDDEN = [list, tuple]

@@ -23,6 +23,41 @@ def add_suffix(string,suffix):
 	else:
 		return "{}_{}".format(string, suffix)
 
+AP_DELIMITER = ","
+def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimiter=None,allow_blank=False):
+	"""split string by delimiter and cast to list with defaults and types"""
+
+	# list/tuple of strings -> individual calls per entry
+	if type(s) in [list, tuple]:
+		return [split_with_defaults(_,defaults,types,delimiter,name_delimiter,allow_blank) for _ in s]
+
+	# single string
+	else:
+		result = []
+		
+		if name_delimiter is not None:
+			if name_delimiter in s:
+				name,_,s = s.rpartition(name_delimiter)
+			else:
+				name=""
+
+		parts = s.split(delimiter)
+		for i,part in enumerate(parts):
+			if part or allow_blank:
+				if types:
+					result.append(types[i](part))
+				else:
+					result.append(part)
+			else:
+				result.append(defaults[i])
+
+		result = result + defaults[len(result):]
+
+		if name_delimiter is not None:
+			result = [name] + result
+
+		return result
+
 
 
 
@@ -376,6 +411,12 @@ def count_passing(mask,new_key):
 def subtract_first(branch,suffix=None):
 	def bud(manager):
 		return {add_suffix(branch,suffix):manager[branch]-manager[branch][0]}
+	return bud
+
+def localize_timestamp(suffix=None, match="timestamp_"):
+	"""subtract first entry from all branches starting with "timestamp_" (or different string if specified)"""
+	def bud(manager):
+		return {add_suffix(_,suffix):manager[_]-manager[_][0] for _ in manager.keys if _.startswith(match)}
 	return bud
 
 def bud_entry(manager):

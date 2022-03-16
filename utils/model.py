@@ -7,6 +7,7 @@ __author__ = "Brunel Odegard"
 __version__ = "0.0"
 
 import math
+import ROOT
 import itertools
 import numpy as np
 
@@ -86,10 +87,34 @@ def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, yerr, True, bounds=[lo,hi])
 	
 	perr  = np.sqrt(np.diag(pcov))
-	chisq = ((func(xdata,*popt)-ydata)/yerr)**2
+	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
 	ndof  = xdata.size - len(popt)
 
-	results = (popt, perr, chisq.sum(), ndof)
+	# need to resolve issue with ROOT not finding python.h
+	# in order to do root fits using python callables
+	do_root_fit = False
+	if do_root_fit:
+		# rf = ROOT.TF1("multifit","[0]+gaus(1)",0.0,1.0)
+		rf = ROOT.TF1("multifit",func,0.0,1.0)
+		ndata = xdata.shape[0]
+		hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
+		for j in range(ndata):
+			hist.SetBinContent(j+1, ydata[j])
+		rf.SetParameters(popt)
+		for ip in range(len(lo)): # set bounds on root parameters
+			this_lo, this_hi = lo[ip], hi[ip]
+			if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
+			if this_hi ==  np.inf:this_hi= 1e7 # 
+			rf.SetParLimits(ip, this_lo, this_hi)
+		fitResult = hist.Fit(rf,"NS" if need_cov else "N")
+		par = rf.GetParameters()
+		err = rf.GetParErrors()
+		popt = [par[_] for _ in range(len(p0))]
+		perr = [err[_] for _ in range(len(p0))]
+		chi2 = rf.GetChisquare()
+		ndof = rf.GetNDF()
+
+	results = (popt, perr, chisq, ndof)
 	if need_cov:
 		results = results + (pcov, )
 

@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import utils.fileio  as fileio
 import utils.display as display
 import utils.model   as model
+import utils.data    as data
 
 
 
@@ -73,40 +74,6 @@ XF_CSV_TYPELIST  = [str, int, float]
 
 # utility functions
 # todo: some of these should be moved into a utils module since many scripts will need the functionality
-def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimiter=None,allow_blank=False):
-	"""split string by delimiter and cast to list with defaults and types"""
-
-	# list/tuple of strings -> individual calls per entry
-	if type(s) in [list, tuple]:
-		return [split_with_defaults(_,defaults,types,delimiter,name_delimiter,allow_blank) for _ in s]
-
-	# single string
-	else:
-		result = []
-		
-		if name_delimiter is not None:
-			if name_delimiter in s:
-				name,_,s = s.rpartition(name_delimiter)
-			else:
-				name=""
-
-		parts = s.split(delimiter)
-		for i,part in enumerate(parts):
-			if part or allow_blank:
-				if types:
-					result.append(types[i](part))
-				else:
-					result.append(part)
-			else:
-				result.append(defaults[i])
-
-		result = result + defaults[len(result):]
-
-		if name_delimiter is not None:
-			result = [name] + result
-
-		return result
-
 def bin_count_from_ndata(ndata):
 	nraw = math.ceil(BIN_COUNT_MULT * math.sqrt(ndata))
 	return max([BIN_COUNT_MIN, nraw])
@@ -171,14 +138,14 @@ def extract_arguments(args):
 		# could also switch to using full filename instead of ID in calibration entries.
 
 	# fit
-	fits = [split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
+	fits = [data.split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
 	fit = fits[0]
 
 	# --cut
 	if args["cut"] is None:
 		cuts = []
 	else:
-		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
+		cuts = data.split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
 
 	# --er
 	event_range = args["event_range"]
@@ -193,7 +160,7 @@ def extract_arguments(args):
 		model_id = -1
 		model_cal_file = None
 	else:
-		model_id, model_cal_file = split_with_defaults(args["model"],[-1,None],[int,str])
+		model_id, model_cal_file = data.split_with_defaults(args["model"],[-1,None],[int,str])
 
 	# -r
 	raw_bounds = args["raw_bounds"]
@@ -208,13 +175,13 @@ def extract_arguments(args):
 	if args["gaus"] is None:
 		gaus = []
 	else:
-		gaus = split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
+		gaus = data.split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
 
 	# --s
 	if args["smono"] is None:
 		smono = []
 	else:
-		smono = split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
+		smono = data.split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
 
 	# --rs
 	ref_spec = args["rs"]
