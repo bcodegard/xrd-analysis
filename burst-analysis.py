@@ -22,7 +22,7 @@ import utils.display as display
 
 
 ROOT_FILE_DEFAULT = '../xrd-analysis/data/root/scintillator/Run{}.root'
-
+FIG_LOC = "./figs/{}.png"
 
 
 
@@ -58,10 +58,10 @@ def procure_cluster_data(args, extra_branches=set()):
 	bm = data.BranchManager(branches, export_copies=False, import_copies=False)
 
 	# apply cuts
-	if args.cut:
-		cuts = [data.cut(*data.split_with_defaults(_,[None,-np.inf,np.inf],[str,float,float])) for _ in args.cut]
-		cuts.append(data.cut(args.fit, args.fit_lo, arg.fit_hi))
-		bm.mask(data.mask_all(*cuts),apply_mask=True)
+	# if args.cut:
+	cuts = [data.cut(*data.split_with_defaults(_,[None,-np.inf,np.inf],[str,float,float])) for _ in args.cut]
+	cuts.append(data.cut(args.fit, args.fit_lo, args.fit_hi))
+	bm.mask(data.mask_all(*cuts),apply_mask=True)
 
 	# fixes and tweaks
 	bm.bud([data.bud_entry])
@@ -133,7 +133,18 @@ def analyze_fourier(args):
 
 
 
+def show_clustering(args):
+	bm=procure_cluster_data(args)
+	t = bm["timestamp_3046_1"]; tm = t.max()
+	f = bm[args.fit]          ; fm = f.max()
+	c = bm["cluster_index"]   ; cm = c.max()
+	plt.plot(bm["entry"], bm["timestamp_3046_1"] / tm, marker='' , ls='-', color='k',       label='time / {:.2f}'.format(tm))
+	# plt.plot(bm["entry"], bm[args.fit]           / fm, marker='.', ls='' , color='g',       label='{} / {:.2f}'.format(args.fit,fm))
+	plt.plot(bm["entry"], bm["cluster_index"]    / cm, marker='.', ls='' , color='darkred', label='cluster / {}'.format(cm))
 
+	plt.xlabel('entry')
+	plt.legend()
+	plt.show()
 
 def analyze_drift(args, ):
 
@@ -147,6 +158,16 @@ def analyze_drift(args, ):
 	cluster_i    = []
 	cluster_fit  = []
 	
+	nc = 5 if args.delta_length else 3
+	fig,ax = plt.subplots(figsize=(nc*5,5))
+	fig.subplots_adjust(
+	    top=0.981,
+	    bottom=0.049,
+	    left=0.04,
+	    right=0.96,
+	    hspace=0.2,
+	    wspace=0.2,
+	)
 
 	# list of components for fit model
 	fit_model_components = []
@@ -174,7 +195,8 @@ def analyze_drift(args, ):
 	for component in fit_model_components[1:]:
 		fit_model = fit_model + component
 	# calculate bins
-	bins = np.linspace(args.fit_lo, args.fit_hi, args.bins)
+	# bins = np.linspace(args.fit_lo, args.fit_hi, args.bins)
+	bins = np.linspace(bm[args.fit].min(), bm[args.fit].max(), args.bins+1)
 
 
 	for i in range(n_clusters):
@@ -190,19 +212,24 @@ def analyze_drift(args, ):
 		counts, edges = np.histogram(this_data, bins=bins)
 		midpoints = (edges[1:] + edges[:-1])*0.5
 
-		try:
-			popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts)
+		popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts, p0=popt if i>0 else None)
+		# try:
+		# 	popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts, p0=popt if i>0 else None)
+		# except Exception as E:
+		# 	print(E)
+		# 	print("{} - {} - fit failed".format(i, this_nev))
+		# 	# plt.step(midpoints, counts, where='mid', color="k", label="data")
+		# 	# plt.plot(midpoints, fit_model(midpoints, *popt), 'g-', label="last good fit")
+		# 	# plt.title("erroring cluster\nusing last good popt")
+		# 	# plt.show()
+		# 	continue
 
-		except Exception as E:
-			print(E)
-			print("{} - {} - fit failed".format(i, this_nev))
-			continue
-
-		if not (i%50):
+		if not i:
+			plt.subplot(1,nc,1)
 			plt.step(midpoints, counts, where='mid', color="k", label="data")
 			plt.plot(midpoints, fit_model(midpoints, *popt), 'g-', label="best fit")
 			plt.title("run {}, cluster {}\nchi2/ndof={:.2f}/{}={:.2f}".format(args.run,i,chi2,ndof,chi2/ndof))
-			plt.show()
+			# plt.show()
 
 		cluster_nev.append(this_t.size)
 		cluster_i.append(i)
@@ -213,31 +240,110 @@ def analyze_drift(args, ):
 	cluster_i   = np.array(cluster_i  )
 	cluster_nev = np.array(cluster_nev)
 
+	plt.subplot(1,nc,2)
 	plt.plot(cluster_i, cluster_nev, 'k.', )
 	plt.xlabel('cluster index')
 	plt.ylabel('number of events')
 	plt.title('number of events per cluster\nRun {}'.format(args.run))
-	plt.show()
+	# plt.show()
 
 	cluster_popt = np.stack([_[0] for _ in cluster_fit],axis=0)
 	cluster_pcov = np.stack([_[1] for _ in cluster_fit],axis=0)
 
-	# poi = 5
-	poi = 2
-	pm_const = model.constant()
-	pm_popt, pm_pcov, pm_chi2, pm_ndof = pm_const.fit(cluster_i, cluster_popt[:,poi], yerr=cluster_pcov[:,poi])
 
-	colors = ['k','g','b','darkred','tab:brown','magenta','c','r']
+	# plot parameters
+	poi = args.poi if args.poi>=0 else fit_model.npars+args.poi
+	qopt = cluster_popt[:,poi]
+	qcov = cluster_pcov[:,poi]
+	
+	pm_const = model.constant()
+	pm_popt, pm_pcov, pm_chi2, pm_ndof = pm_const.fit_with_errors(cluster_i, qopt, xerr=None, yerr=qcov)
+
+	plt.subplot(1,nc,3)
+	colors = ['k','g','b','darkred','tab:brown','m','c','tab:red',"peru","orange","olive","teal","tab:purple"]
 	for j in range(fit_model.npars):
 		if j!=poi:
 			continue
-		plt.errorbar(cluster_i, cluster_popt[:,j], cluster_pcov[:,j], color=colors[j], ls='', marker='.', label=fit_model.pnames[j])
-		plt.plot(cluster_i, pm_const(cluster_i, *pm_popt), 'k-', label="fit")
+		this_popt, this_pcov, this_chi2, this_ndof = pm_const.fit_with_errors(cluster_i, cluster_popt[:,j], xerr=None, yerr=cluster_pcov[:,j])	
+		this_label = "{}: {:.3f}".format(fit_model.pnames[j], this_chi2/this_ndof)
+		plt.errorbar(cluster_i, cluster_popt[:,j], cluster_pcov[:,j], color=colors[j], ls='', marker='.', label=this_label)
+		plt.plot(cluster_i, pm_const(cluster_i, *this_popt), color=colors[j], ls='--')
+
 	plt.xlabel('cluster index')
 	plt.ylabel('parameter values')
-	plt.title("fit parameter values per cluster, run {}\nfit chi2/dof = {:.2f}/{} = {:.2f}".format(args.run, pm_chi2, pm_ndof, pm_chi2/pm_ndof))
+	plt.title("fit parameter values per cluster, run {}\n{} fit chi2/dof = {:.2f}/{} = {:.2f}".format(args.run, fit_model.pnames[poi], pm_chi2, pm_ndof, pm_chi2/pm_ndof))
 	plt.legend()
+	# plt.show()
+
+
+
+	chi_model = model.gaus([[0,np.inf],[-np.inf,np.inf],[0,np.inf]])
+
+
+	# analyze parameters over cluster index
+	if args.delta_length:
+
+		isep  = args.delta_length
+		d     = (qopt[isep:] - qopt[:-isep]      )
+		d_var = (qcov[isep:]**2 + qcov[:-isep]**2)
+		d_std = np.sqrt(d_var)
+		d_ind = cluster_i[isep:]
+
+		fit_d = pm_const.fit_with_errors(d_ind, d, xerr=None, yerr=np.sqrt(d_var))
+		
+		chi2_d_zero = ((d**2) / d_var).sum()
+		ndof_d_zero = d.size
+
+		# plt.errorbar(cluster_i, qopt-np.mean(qopt), qcov, color='k', ls='', marker='.', label='mu[i] - avg(mu)')
+		plt.subplot(1,nc,4)
+		plt.errorbar(d_ind, d, d_std, color='darkred', ls='', marker='.', label="{0}[i] - {0}[i-{1}]".format(fit_model.pnames[poi],isep))
+		plt.plot(d_ind, pm_const(d_ind,*fit_d[0]), color='r', ls='--', marker='', label='constant fit to difference')
+		plt.axhline(0, color='b', ls='-', label='zero')
+		plt.xlabel("cluster index")
+		plt.ylabel("difference between clusters")
+		plt.title("c=0: chi2/dof = {:.2f} / {} = {:.3f} \nc={:.3f}: chi2/dof = {:.2f} / {} = {:.3f}".format(
+			chi2_d_zero, ndof_d_zero, chi2_d_zero/ndof_d_zero,
+			fit_d[0][0],fit_d[2],fit_d[3],fit_d[2]/fit_d[3],
+		))
+		plt.legend()
+		# plt.show()
+
+		# analyze distribution of chi
+		d_chi = d / d_std
+
+		# max_abs_chi = abs(d_chi).max()
+		bins_chi = np.linspace(d_chi.min()-1,d_chi.max()+1,20+1)
+
+		counts_chi, edges_chi = np.histogram(d_chi, bins=bins_chi)
+		midpoints_chi = (edges_chi[1:] + edges_chi[:-1])*0.5
+
+		popt_chi, perr_chi, chisq_chi, ndof_chi = chi_model.fit(midpoints_chi, counts_chi)
+
+
+		plt.subplot(1,nc,5)
+		plt.step(midpoints_chi, counts_chi, where='mid', color="k", label="data")
+		plt.plot(midpoints_chi, chi_model(midpoints_chi, *popt_chi), 'g-', label="best fit")
+		popt_chi_string = ", ".join(["{}={:.2f}\xb1{:.3f}".format(_,popt_chi[i], perr_chi[i]) for i,_ in enumerate(chi_model.pnames)])
+		plt.title("run {}, change in {}, chi2/ndof={:.2f}/{}={:.3f}\n{}".format(args.run,fit_model.pnames[poi],chisq_chi,ndof_chi,chisq_chi/ndof_chi,popt_chi_string))
+		plt.xlabel("chi = delta_ij / err(delta_ij)")
+		plt.ylabel("counts")
+
+
+	plt.tight_layout()
+
+	if args.fig:
+		
+		# just filename: save in ./figs/
+		if not (os.sep in args.fig):
+			fig_file = FIG_LOC.format(args.fig)
+		else:
+			fig_file = args.fig
+
+		# save the figure to an image file
+		plt.savefig(fig_file)
+
 	plt.show()
+
 
 
 
@@ -255,6 +361,10 @@ def main(args):
 	elif routine == "fourier":
 		print("performing fourier analysis")
 		analyze_fourier(args)
+
+	elif routine == "show":
+		print("showing clustering results")
+		show_clustering(args)
 
 	else:
 		print("unrecognized analysis routine: {}".format(routine))
@@ -276,10 +386,9 @@ if __name__ == '__main__':
 
 	# dataset specification
 	parser.add_argument("run",type=str,help="file location, name, or number")
-
-	parser.add_argument("fit",type=str,help="branch to fit")
-	parser.add_argument("fit_lo",type=float,default=-np.inf,help="low bound on fit range")
-	parser.add_argument("fit_hi",type=float,default= np.inf,help="high bound on fit range")
+	parser.add_argument("fit",type=str,nargs="*",help="branch to fit, low bound, high bound")
+	# parser.add_argument("fit_lo",type=float,default=-np.inf,help="low bound on fit range")
+	# parser.add_argument("fit_hi",type=float,default= np.inf,help="high bound on fit range")
 	parser.add_argument("--cut",type=str,action='append',default=[],help="branch to cut on: branch,min,max")
 
 
@@ -298,11 +407,20 @@ if __name__ == '__main__':
 
 	# analysis routine
 	parser.add_argument("--do",type=str,nargs="+",default=["drift"],help="what analysis to perform, and any extra arguments it needs")
+	parser.add_argument("--poi",type=int,default=-2,help="which parameter from fit to analyze. negative = count back from end of list.")
+	parser.add_argument("--delta-length","--d",type=int,default=0,help="analyze difference between clusters with indices separated by this amount")
 
 
-	# if len(sys.argv) <= 1:
-	# 	...
-	# else:
+	# output
+	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
+
+
 	args = parser.parse_args()
-	# print(args.run)
+
+	# jank
+	merge = lambda ltop,lbot:ltop if len(ltop) >= len(lbot) else ltop + lbot[len(ltop):]
+	for i in range(1,len(args.fit)):
+		args.fit[i] = float(args.fit[i])
+	args.fit, args.fit_lo, args.fit_hi = merge(args.fit, [None, -np.inf, np.inf])
+
 	main(args)

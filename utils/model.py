@@ -20,6 +20,28 @@ NO_BOUNDS = [-np.inf, np.inf]
 
 
 
+FS_FLOAT = "{:<12.4f}"
+format_list  = lambda l,s=", ":s.join([FS_FLOAT.format(_) for _ in l])
+FS_RESULT = "{:<5} | {:<8.2f}| {:<6}| {:<8.4f}| {}| {}"
+
+
+
+
+# # wrap func so that it has the correct parameter order
+# # and so that it does not create segmentation faults
+# 	# root doesn't like it if you try to access past the end of p
+# 	# which python does for *p or other iteration methods
+# 	# so we need to explicitly extract only as many arguments
+# 	# as there are included.
+# 	# segfault will occur if we don't do this.
+def convert_func_for_root(func,npars):
+	def func_for_root(x,p):
+		return func(x[0],*[p[_] for _ in range(npars)])
+	return func_for_root
+
+
+
+
 def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 	"""performs a fit on xdata,ydata with xerr,yerr errors
 	assumes no covariance in x or y errors"""
@@ -33,37 +55,84 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 		if p < lo[ip]:p0[ip]=lo[ip]
 		if p > hi[ip]:p0[ip]=hi[ip]
 
-	is_fixed = [l==h for l,h in bounds]
 
-	odr_data  = odr.RealData(xdata, ydata, xerr, yerr)
-	odr_model = odr.Model(lambda beta,x:func(x,*beta))
-	odr_inst  = odr.ODR(odr_data, odr_model, p0, maxit=500)#, None, is_fixed, np.zeros(xdata.shape))
+	if xerr:
+		pass
 
-	odr_inst.run()
-	odr_out = odr_inst.output
+		# is_fixed = [l==h for l,h in bounds]
 
-	# print("{:<18}: {}".format("beta", odr_out.beta))
-	# print("{:<18}: {}".format("sd_beta", odr_out.sd_beta))
-	# print("{:<18}: {}".format("cov_beta", odr_out.cov_beta))
-	# # print("{:<18}: {}".format("delta", odr_out.delta))
-	# # print("{:<18}: {}".format("eps", odr_out.eps))
-	# # print("{:<18}: {}".format("xplus", odr_out.xplus))
-	# # print("{:<18}: {}".format("y", odr_out.y))
-	# print("{:<18}: {}".format("res_var", odr_out.res_var))
-	# print("{:<18}: {}".format("sum_square", odr_out.sum_square))
-	# print("{:<18}: {}".format("sum_square_delta", odr_out.sum_square_delta))
-	# print("{:<18}: {}".format("sum_square_eps", odr_out.sum_square_eps))
-	# print("{:<18}: {}".format("inv_condnum", odr_out.inv_condnum))
-	# print("{:<18}: {}".format("rel_error", odr_out.rel_error))
-	# # print("{:<18}: {}".format("work", odr_out.work))
-	# print("{:<18}: {}".format("work_ind", odr_out.work_ind))
-	# print("{:<18}: {}".format("info", odr_out.info))
-	# print("{:<18}: {}".format("stopreason", odr_out.stopreason))
+		# odr_data  = odr.RealData(xdata, ydata, xerr, yerr)
+		# odr_model = odr.Model(lambda beta,x:func(x,*beta))
+		# odr_inst  = odr.ODR(odr_data, odr_model, p0, maxit=500)#, None, is_fixed, np.zeros(xdata.shape))
 
-	results = (odr_out.beta, np.sqrt(np.diag(odr_out.cov_beta)), odr_out.res_var, xdata.size - len(p0), )
+		# odr_inst.run()
+		# odr_out = odr_inst.output
+
+		# results = (odr_out.beta, np.sqrt(np.diag(odr_out.cov_beta)), odr_out.res_var, xdata.size - len(p0), )
+		# if need_cov:
+		# 	results = results + (odr_out.cov_beta, )
+		# return results
+
+	else:
+		xerr = np.zeros(xdata.shape)
+
+
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0=p0, sigma=yerr, absolute_sigma=True, bounds=[lo,hi])
+	perr  = np.sqrt(np.diag(pcov))
+	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
+	ndof  = xdata.size - len(popt)
+
+	print("fit_graph")
+	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+
+
+	do_root_fit = False
+	if do_root_fit:
+
+		# wrap function for ROOT expected format
+		func_for_root = convert_func_for_root(func, npars=len(p0))
+
+		# create root TF1 (function) object
+		rf = ROOT.TF1("multifit",func_for_root,0.0,1.0,len(p0))
+		rf.SetParameters(*popt)
+
+		# create and populate TGraphErrors (graph) object
+		ndata = len(xdata)
+		graph = ROOT.TGraphErrors(
+			ndata,
+			np.array(xdata).astype(float),
+			np.array(ydata).astype(float),
+			np.array(xerr).astype(float),
+			np.array(yerr).astype(float)
+		)
+
+		# perform fit on TF1
+		fitResult = graph.Fit(rf,"NQS" if need_cov else "NQ")
+
+		# extract results
+		par = rf.GetParameters()
+		err = rf.GetParErrors()
+		popt  = [par[_] for _ in range(len(p0))]
+		perr  = [err[_] for _ in range(len(p0))]
+		chisq = rf.GetChisquare()
+		ndof  = rf.GetNDF()
+		if need_cov:
+			cov = fitResult.GetCovarianceMatrix()
+			nr = cov.GetNrows()
+			nc = cov.GetNcols()
+			cov_mtx_ptr = cov.GetMatrixArray()
+			pcov = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
+
+		print(FS_RESULT.format("root",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+	print("")
+
+
+	results = (popt, perr, chisq, ndof)
 	if need_cov:
-		results = results + (odr_out.cov_beta, )
+		results = results + (pcov, )
 	return results
+
+	
 
 def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 	"""performs a fit on xdata,ydata assuming poisson errors on y and no errors on x"""
@@ -83,36 +152,54 @@ def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 
 	# assume hist -> poisson errors on y
 	if yerr is None:
-		yerr = np.sqrt(ydata)
-	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, yerr, True, bounds=[lo,hi])
+		yerr = np.maximum(np.sqrt(ydata), 1)
+
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0=p0, sigma=yerr, absolute_sigma=True, bounds=[lo,hi])
 	
 	perr  = np.sqrt(np.diag(pcov))
 	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
-	ndof  = xdata.size - len(popt)
+	# ndof  = xdata.size - len(popt)
+	ndof  = np.count_nonzero(ydata) - len(popt)
 
-	# need to resolve issue with ROOT not finding python.h
-	# in order to do root fits using python callables
+	print("fit_hist")
+	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+
+
 	do_root_fit = False
 	if do_root_fit:
-		# rf = ROOT.TF1("multifit","[0]+gaus(1)",0.0,1.0)
-		rf = ROOT.TF1("multifit",func,0.0,1.0)
+
+		# wrap function for ROOT expected format
+		func_for_root = convert_func_for_root(func, npars=len(p0))
+
+		# create root TF1 (function) object
+		rf = ROOT.TF1("multifit",func_for_root,0.0,1.0,len(p0))
+		rf.SetParameters(*popt)
+
+		# create and populate TH1F (histogram) object
 		ndata = xdata.shape[0]
 		hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
 		for j in range(ndata):
 			hist.SetBinContent(j+1, ydata[j])
-		rf.SetParameters(popt)
 		for ip in range(len(lo)): # set bounds on root parameters
 			this_lo, this_hi = lo[ip], hi[ip]
 			if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
 			if this_hi ==  np.inf:this_hi= 1e7 # 
 			rf.SetParLimits(ip, this_lo, this_hi)
-		fitResult = hist.Fit(rf,"NS" if need_cov else "N")
+
+		# do fit routine
+		fitResult = hist.Fit(rf,"NQS" if need_cov else "NQ")
+
+		# extract fit results and update local variables for return
 		par = rf.GetParameters()
 		err = rf.GetParErrors()
-		popt = [par[_] for _ in range(len(p0))]
-		perr = [err[_] for _ in range(len(p0))]
-		chi2 = rf.GetChisquare()
-		ndof = rf.GetNDF()
+		popt  = [par[_] for _ in range(len(p0))]
+		perr  = [err[_] for _ in range(len(p0))]
+		chisq = rf.GetChisquare()
+		ndof  = rf.GetNDF()
+
+		print(FS_RESULT.format("root",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+	print("")
+
 
 	results = (popt, perr, chisq, ndof)
 	if need_cov:

@@ -56,7 +56,7 @@ SMONO_DEFAULTS = [3,-np.inf,np.inf,0,np.inf]
 
 # how many places past decimal point to show for display purposes
 # does not affect precision of saved information
-DISPLAY_PRECISION = 3
+DISPLAY_PRECISION = 5
 
 # list of parameters corresponding to the locations of peaks
 PEAK_PARAMETERS = ["mu", "xpeak"]
@@ -785,7 +785,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 
 		# print results
 		if verbosity:
-			line_template = "{:>8} | {:>10} | {:>10} | {:>12} | {:>12}"
+			line_template = "{:>8} | {:>12} | {:>12} | {:>16} | {:>16}"
 			print("")
 			print("meta model performance: chi2/ndof = {}/{} = {}".format(
 				round(chi2,DISPLAY_PRECISION),

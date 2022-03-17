@@ -322,7 +322,10 @@ class BranchManager(object):
 
 # built-in mask methods
 
-def mask_entry_range(lo=0,hi=np.inf):
+def mask_range(lo=0,hi=np.inf):
+	"""convenient and computationally efficient method for selecting listeral range in data
+	does not cut on "entry" branch; rather, cuts on index of arrays first axes
+	which will be different if any cuts have previously been applied"""
 	def mask(manager):
 		lo_enf = max([lo,0])
 		hi_enf = min([hi,len(manager)])
