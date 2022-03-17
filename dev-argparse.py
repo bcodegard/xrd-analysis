@@ -8,19 +8,18 @@ __version__ = "0.0"
 
 import sys
 import argparse
+import numpy as np
+
+import utils.cli as cli
 
 
 
 
 def main(args):
-
+	max_key_length = max([len(_) for _ in args.keys()])
 	for key,value in args.items():
-		print(key,value)
-
-	print("BLIMEY!")
-
-
-
+		print("{:<{l}} : {}".format(key,value,l=max_key_length))
+	print("BLIMEY! Those are the results!")
 
 if __name__ == '__main__':
 
@@ -31,29 +30,22 @@ if __name__ == '__main__':
 	# version
 	parser.add_argument("--version",action="version",version="%(prog)s {}".format(__version__))
 
-	# data arguments
-	parser.add_argument("run",type=str,help="file location, name, or number")
-	parser.add_argument("fit",type=str,help="branch to fit: branch,min,max")
-	parser.add_argument("--cut",type=str,action='append',help="branch to cut on: branch,min,max")
-	parser.add_argument("--m"  ,type=str,dest="model",help="model to use: model_id,calibration_file")
-	parser.add_argument("-t"   ,action='store_true',dest="transform_bounds",help="if specified, transform bounds with model")
+	# custom action class
+	parser.add_argument("--merge"          , "--m" , type=str  , nargs="+", default=None, action=cli.MergeAction         , const=((str,int,float),("",1,-np.inf,np.inf)))
+	parser.add_argument("--merge-nodefault", "--mn", type=str  , nargs="+", default=None, action=cli.MergeAction         , const=((str,float),))
+	parser.add_argument("--merge-append"   , "--ma", type=str  , nargs="+", default=None, action=cli.MergeAppendAction   , const=((str,int),("",0,1,2,3)))
+	parser.add_argument("--function"       , "--f" , type=float, nargs="+", default=None, action=cli.FunctionAction      , const=lambda vs:sum(vs))
+	parser.add_argument("--function-change", "--fc", type=float,            default=1   , action=cli.FunctionChangeAction, const=lambda vs,o:vs*o)
+	parser.add_argument("--function-append", "--fa", type=str  , nargs="+", default=None, action=cli.FunctionAppendAction, const=lambda vs:vs[::-1])
 
-	# fitting arguments
-	parser.add_argument("--bins",type=int,default=0, help="number of bins to use")
-	parser.add_argument("--bg"  ,type=str,default="",dest="background",help="background function: any combination of (p)ower (e)xp (c)onstant (l)ine (q)uadratic")
-	parser.add_argument("--g"   ,type=str,action='append',dest="gaus",help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
 
-	# display arguments
-	parser.add_argument("--d",type=str,default="drp",dest='display',help="display: any combinration of (d)ata (r)oot (p)eaks (s)cipy (g)uess")
-	parser.add_argument("--ylim",type=int,help="upper y limit on plot")
-	parser.add_argument("-x",dest="xlog",action="store_true",help="sets x axis of figure to log scale")
-	parser.add_argument("-y",dest="ylog",action="store_true",help="sets y axis of figure to log scale")
-	parser.add_argument("-s",dest="show",action="store_false",help="don't show figure as pyplot window")
+	if len(sys.argv) <= 1:
+		print("no arguments supplied. running with example set of arguments.")
+		args_ex = "--ma wat -1 0 1 --ma taw --ma twa 1 --m amp 2 0 --f 1 3 4 2 3 4.5 --f -0.5 12 --fc 0.95 --fc 5.0 --fc 0.34 --fa a b c --fa a a c --fa 1 2 3 --mn kernel 1 0 2 -1 1 -2 0 -1"
+		args_ex_split = [_ for _ in args_ex.split(' ') if _]
+		args = vars(parser.parse_args(args_ex_split))
+	else:
+		args = vars(parser.parse_args())
 
-	# output arguments
-	parser.add_argument("--out",type=str,help="location to save fit results as csv file (appends if file exists)")
-	parser.add_argument("--fig",type=str,help="location to save figure as png image (overwrites if file exists)")
-	parser.add_argument("-v",action='count',default=0,help="verbosity")
 
-	args = vars(parser.parse_args())
 	main(args)

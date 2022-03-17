@@ -1,7 +1,14 @@
 """
-script used for testing features during development
-don't actually use this for anything else
+separate a dataset into segments separated by points which
+exceed a thredhold for a branch or its derivative, and then
+perform analysis on the separated datasets.
+
+typical case is to use the derivative of a timestamp variable,
+in which case the threshold is a time separation between events.
 """
+
+__author__ = "Brunel Odegard"
+__version__ = "0.1"
 
 import argparse
 import sys
@@ -17,6 +24,7 @@ import utils.fileio  as fileio
 import utils.data    as data
 import utils.model   as model
 import utils.display as display
+import utils.cli     as cli
 
 
 
@@ -48,9 +56,9 @@ def procure_cluster_data(args, extra_branches=set()):
 	cluster_branch = next(_ for _ in sorted(branches_all) if _.startswith(args.cluster_branch))
 	branches_use |= {cluster_branch}
 	# fit
-	branches_use |= {args.fit}
+	branches_use |= {args.fit[0]}
 	# cuts
-	cut_branches = {_.partition(',')[0] for _ in args.cut}
+	cut_branches = {_[0] for _ in args.cut}
 	branches_use |= cut_branches
 	
 	# load branches and create manager instance
@@ -59,8 +67,7 @@ def procure_cluster_data(args, extra_branches=set()):
 
 	# apply cuts
 	# if args.cut:
-	cuts = [data.cut(*data.split_with_defaults(_,[None,-np.inf,np.inf],[str,float,float])) for _ in args.cut]
-	cuts.append(data.cut(args.fit, args.fit_lo, args.fit_hi))
+	cuts = [data.cut(*_) for _ in [args.fit] + args.cut]
 	bm.mask(data.mask_all(*cuts),apply_mask=True)
 
 	# fixes and tweaks
@@ -136,10 +143,10 @@ def analyze_fourier(args):
 def show_clustering(args):
 	bm=procure_cluster_data(args)
 	t = bm["timestamp_3046_1"]; tm = t.max()
-	f = bm[args.fit]          ; fm = f.max()
+	f = bm[args.fit[0]]       ; fm = f.max()
 	c = bm["cluster_index"]   ; cm = c.max()
 	plt.plot(bm["entry"], bm["timestamp_3046_1"] / tm, marker='' , ls='-', color='k',       label='time / {:.2f}'.format(tm))
-	# plt.plot(bm["entry"], bm[args.fit]           / fm, marker='.', ls='' , color='g',       label='{} / {:.2f}'.format(args.fit,fm))
+	# plt.plot(bm["entry"], bm[args.fit[0]]        / fm, marker='.', ls='' , color='g',       label='{} / {:.2f}'.format(args.fit[0],fm))
 	plt.plot(bm["entry"], bm["cluster_index"]    / cm, marker='.', ls='' , color='darkred', label='cluster / {}'.format(cm))
 
 	plt.xlabel('entry')
@@ -158,7 +165,7 @@ def analyze_drift(args, ):
 	cluster_i    = []
 	cluster_fit  = []
 	
-	nc = 5 if args.delta_length else 3
+	nc = 5 if args.delta[0] else 3
 	fig,ax = plt.subplots(figsize=(nc*5,5))
 	fig.subplots_adjust(
 	    top=0.981,
@@ -184,8 +191,7 @@ def analyze_drift(args, ):
 	n_bg_parameters = sum([_.npars for _ in fit_model_components])
 	# add gaussians
 	gaus_names = []
-	GAUS_DEFAULTS  = [-np.inf,np.inf,0.0,np.inf,0.0,np.inf]
-	for ig,g in enumerate(data.split_with_defaults(args.gaus,GAUS_DEFAULTS,[float]*6,name_delimiter="=")):
+	for ig,g in enumerate(args.gaus):
 		gaus_names.append(g[0])
 		# re-arrange so as to have mu bounds specified first
 		this_bounds = [[g[5],g[6]], [g[1],g[2]], [g[3],g[4]]]
@@ -195,17 +201,18 @@ def analyze_drift(args, ):
 	for component in fit_model_components[1:]:
 		fit_model = fit_model + component
 	# calculate bins
-	# bins = np.linspace(args.fit_lo, args.fit_hi, args.bins)
-	bins = np.linspace(bm[args.fit].min(), bm[args.fit].max(), args.bins+1)
+	# bins = np.linspace(args.fit[1], args.fit[2], args.bins)
+	bins = np.linspace(bm[args.fit[0]].min(), bm[args.fit[0]].max(), args.bins+1)
 
 
 	for i in range(n_clusters):
+		print("cluster index {}, count {} / {}".format(i, i+1,n_clusters))
 
 		mask = data.cut("cluster_index", i - 0.1, i + 0.1)
-		masked_branches = bm.mask(mask, {"timestamp_3046_1",args.fit})
+		masked_branches = bm.mask(mask, {"timestamp_3046_1",args.fit[0]})
 
 		this_t    = masked_branches["timestamp_3046_1"]
-		this_data = masked_branches[args.fit]
+		this_data = masked_branches[args.fit[0]]
 
 		this_nev = this_t.size
 
@@ -234,7 +241,7 @@ def analyze_drift(args, ):
 		cluster_nev.append(this_t.size)
 		cluster_i.append(i)
 		cluster_fit.append([popt, pcov, chi2, ndof])
-		print("{:<3} - {} - {} - {} - {} - {}".format(i, this_t.size, [round(_,3) for _ in popt], [round(_,3) for _ in pcov], chi2, ndof))
+		# print("{:<3} - {} - {} - {} - {} - {}".format(i, this_t.size, [round(_,3) for _ in popt], [round(_,3) for _ in pcov], chi2, ndof))
 
 
 	cluster_i   = np.array(cluster_i  )
@@ -281,13 +288,19 @@ def analyze_drift(args, ):
 
 
 	# analyze parameters over cluster index
-	if args.delta_length:
+	if args.delta[0]:
 
-		isep  = args.delta_length
+		isep  = args.delta[0]
 		d     = (qopt[isep:] - qopt[:-isep]      )
 		d_var = (qcov[isep:]**2 + qcov[:-isep]**2)
 		d_std = np.sqrt(d_var)
 		d_ind = cluster_i[isep:]
+
+		# slice d and associated arrays with delta[1:4]
+		d     = d    [slice(*args.delta[1:4])]
+		d_var = d_var[slice(*args.delta[1:4])]
+		d_std = d_std[slice(*args.delta[1:4])]
+		d_ind = d_ind[slice(*args.delta[1:4])]
 
 		fit_d = pm_const.fit_with_errors(d_ind, d, xerr=None, yerr=np.sqrt(d_var))
 		
@@ -352,22 +365,23 @@ def analyze_drift(args, ):
 def main(args):
 
 	print(args)
+	print("")
 	routine = args.do[0]
 
 	if routine == "drift":
-		print("performing drift analysis")
+		print("performing drift analysis\n")
 		analyze_drift(args)
 
 	elif routine == "fourier":
-		print("performing fourier analysis")
+		print("performing fourier analysis\n")
 		analyze_fourier(args)
 
 	elif routine == "show":
-		print("showing clustering results")
+		print("showing clustering results\n")
 		show_clustering(args)
 
 	else:
-		print("unrecognized analysis routine: {}".format(routine))
+		print("unrecognized analysis routine: {}\n".format(routine))
 
 	return
 
@@ -386,16 +400,30 @@ if __name__ == '__main__':
 
 	# dataset specification
 	parser.add_argument("run",type=str,help="file location, name, or number")
-	parser.add_argument("fit",type=str,nargs="*",help="branch to fit, low bound, high bound")
-	# parser.add_argument("fit_lo",type=float,default=-np.inf,help="low bound on fit range")
-	# parser.add_argument("fit_hi",type=float,default= np.inf,help="high bound on fit range")
-	parser.add_argument("--cut",type=str,action='append',default=[],help="branch to cut on: branch,min,max")
+	parser.add_argument("fit",type=str,nargs="+",action=cli.MergeAction,const=((str,float),("",-np.inf,np.inf)),help="branch low=-inf hi=inf")
+	parser.add_argument(
+		"--cut","--c",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((str,float),("",-np.inf,np.inf)),
+		default=[],
+		help="cut on (lo<branch<hi): --c branch lo=-inf hi=inf"
+	)
 
 
 	# fitting specification
 	parser.add_argument("--bins",type=int,default=100,help="number of bins to use")
-	parser.add_argument("--bg"  ,type=str,default="c",help="background function: any combination of (p)ower (e)xp (c)onstant (l)ine (q)uadratic")
-	parser.add_argument("--g"   ,type=str,default=[],action='append',dest="gaus",help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
+	parser.add_argument("--bg"  ,type=str,nargs="?",const="",default="c",help="background function: any combination of (p)ower (e)xp (c)onstant (l)ine (q)uadratic")
+	parser.add_argument(
+		"--gaus","--g",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((str,float),("",-np.inf,np.inf,0.0,np.inf,0.0,np.inf)),
+		default=[],
+		help="gaussian: name='' mu_lo=-inf mu_hi=inf sigma_lo=0 sigma_hi=inf c_lo=0 c_hi=inf"
+	)
 
 
 	# clustering details
@@ -408,19 +436,21 @@ if __name__ == '__main__':
 	# analysis routine
 	parser.add_argument("--do",type=str,nargs="+",default=["drift"],help="what analysis to perform, and any extra arguments it needs")
 	parser.add_argument("--poi",type=int,default=-2,help="which parameter from fit to analyze. negative = count back from end of list.")
-	parser.add_argument("--delta-length","--d",type=int,default=0,help="analyze difference between clusters with indices separated by this amount")
+	parser.add_argument(
+		"--delta","--d",
+		type=str,
+		nargs="*",
+		action=cli.MergeAction,
+		const=((int,),(1,None,None,None)),
+		default=[0],
+		help="analyze difference between pairs of clusters with: separation=1 pair_start=None pair_stop=None pair_step=None"
+	)
 
 
 	# output
 	parser.add_argument("--fig",type=str,default="",help="location to save figure as png image (overwrites if file exists)")
 
 
+	# parse and run
 	args = parser.parse_args()
-
-	# jank
-	merge = lambda ltop,lbot:ltop if len(ltop) >= len(lbot) else ltop + lbot[len(ltop):]
-	for i in range(1,len(args.fit)):
-		args.fit[i] = float(args.fit[i])
-	args.fit, args.fit_lo, args.fit_hi = merge(args.fit, [None, -np.inf, np.inf])
-
 	main(args)
