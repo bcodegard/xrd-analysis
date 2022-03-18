@@ -423,7 +423,7 @@ class model_multiple(object):
 class metamodel(object):
 	""""""
 
-	def __init__(self, m, xfp, xfx=False):
+	def __init__(self, m, xfp, xfx=False, bounds=None):
 		
 		# reference to model being transformed
 		# might not need to actually store this reference
@@ -432,6 +432,10 @@ class metamodel(object):
 		# transformations of parameters of m
 		# one token per parameter that model m takes
 		self.xfp = xfp
+
+		# bounds
+		# one list of [lo,hi] per metamodel parameter
+		self.bounds = bounds
 
 		# constant linear transformation of independent variable (x)
 		# used to constrain magnitude of numbers in fit routine
@@ -482,6 +486,10 @@ class metamodel(object):
 		p = self.transform_parameters(q)
 
 		return self.m(x, *p)
+
+	def fit(self, xdata, ydata, need_cov=False, p0=None):
+		assert (p0 is not None)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov)
 
 
 

@@ -749,7 +749,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		# display reference model and meta model parameter info
 		if verbosity>1:
 			print("reference model parameters (p)")
-			line_template = "{:>8} | {:<32} | {:<32.32s} | {:<32.32s}"
+			line_template = "{:>8} | {:<32} | {:<32.4s} | {:<32.4s}"
 			print(line_template.format("pname", "reference spectrum bounds", "xfp_rfs", "xfp"))
 			print(line_template.format(" ", " ", " ", " "))
 			for ip,p in enumerate(fit_model.pnames):
@@ -785,7 +785,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 
 		# print results
 		if verbosity:
-			line_template = "{:>8} | {:>12} | {:>12} | {:>16} | {:>16}"
+			line_template = "{:>8} | {:>12} | {:>12} | {:>24} | {:>24}"
 			print("")
 			print("meta model performance: chi2/ndof = {}/{} = {}".format(
 				round(chi2,DISPLAY_PRECISION),
@@ -884,7 +884,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		# fit the binned data
 		popt, perr, chi2, ndof, pcov = fit_model.fit(midpoints, counts, need_cov = True)
 		if verbosity:
-			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
+			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>14}| {:>14}"
 			print("")
 			print("model performance: chi2/ndof = {}/{} = {}".format(
 				round(chi2,DISPLAY_PRECISION),

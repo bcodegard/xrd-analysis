@@ -176,6 +176,7 @@ def analyze_drift(args, ):
 	    wspace=0.2,
 	)
 
+
 	# list of components for fit model
 	fit_model_components = []
 	# add background components
@@ -200,6 +201,59 @@ def analyze_drift(args, ):
 	fit_model = fit_model_components[0]
 	for component in fit_model_components[1:]:
 		fit_model = fit_model + component
+
+
+	has_dependent_components = any([args.gaus_linear_dep, ])
+	if has_dependent_components:
+
+		# compose fit model containing dependent components as free components
+		dependent_components = []
+		gaus_linear_dep_names = []
+
+		for ig,g in enumerate(args.gaus_linear_dep):
+			gaus_linear_dep_names.append(g[0])
+			dependent_components.append(model.gaussian())
+
+		for ic,c in enumerate(dependent_components):
+			if ic==0:
+				fit_model_with_dependents = fit_model + c
+			else:
+				fit_model_with_dependents = fit_model_with_dependents + c
+
+
+		# compose metamodel with direct parameterization of free components' parameters
+		# and liner transformations of those parameters for dependent components' parameters
+		xfp = []
+
+		# add literal parameters of fit model
+		for ip in range(fit_model.npars):
+			unitvec = np.zeros(fit_model.npars,dtype=float)
+			unitvec[ip] = 1.0
+			xfp.append(unitvec)
+
+		# add scaled parameters for linearly dependent gaussians
+		for ig,g in enumerate(args.gaus_linear_dep):
+
+			# find index of independent gaussian with matching name
+			indep_ig = next(i for i,_ in enumerate(gaus_names) if _ == g[0])
+
+			# calculate starting index of that gaussian's parameters in fit_model
+			indep_ip_start = n_bg_parameters + 3*indep_ig
+
+			# add transformations
+			for jp,pscale in enumerate(g[1:]):
+				scaled_unitvec = np.zeros(fit_model.npars,dtype=float)
+				scaled_unitvec[indep_ip_start+jp] = pscale
+				xfp.append(scaled_unitvec)
+
+		fit_metamodel = model.metamodel(fit_model_with_dependents, xfp, bounds=fit_model.bounds)
+		eval_model = fit_metamodel
+
+	else:
+		eval_model = fit_model
+
+
+
 	# calculate bins
 	# bins = np.linspace(args.fit[1], args.fit[2], args.bins)
 	bins = np.linspace(bm[args.fit[0]].min(), bm[args.fit[0]].max(), args.bins+1)
@@ -219,22 +273,17 @@ def analyze_drift(args, ):
 		counts, edges = np.histogram(this_data, bins=bins)
 		midpoints = (edges[1:] + edges[:-1])*0.5
 
-		popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts, p0=popt if i>0 else None)
-		# try:
-		# 	popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts, p0=popt if i>0 else None)
-		# except Exception as E:
-		# 	print(E)
-		# 	print("{} - {} - fit failed".format(i, this_nev))
-		# 	# plt.step(midpoints, counts, where='mid', color="k", label="data")
-		# 	# plt.plot(midpoints, fit_model(midpoints, *popt), 'g-', label="last good fit")
-		# 	# plt.title("erroring cluster\nusing last good popt")
-		# 	# plt.show()
-		# 	continue
+
+		if has_dependent_components:
+			popt, pcov, chi2, ndof = fit_metamodel.fit(midpoints, counts, p0=popt if i>0 else fit_model.guess(midpoints,counts))
+		else:
+			popt, pcov, chi2, ndof = fit_model.fit(midpoints, counts, p0=popt if i>0 else None)
+
 
 		if not i:
 			plt.subplot(1,nc,1)
 			plt.step(midpoints, counts, where='mid', color="k", label="data")
-			plt.plot(midpoints, fit_model(midpoints, *popt), 'g-', label="best fit")
+			plt.plot(midpoints, eval_model(midpoints, *popt), 'g-', label="best fit")
 			plt.title("run {}, cluster {}\nchi2/ndof={:.2f}/{}={:.2f}".format(args.run,i,chi2,ndof,chi2/ndof))
 			# plt.show()
 
@@ -423,6 +472,16 @@ if __name__ == '__main__':
 		const=((str,float),("",-np.inf,np.inf,0.0,np.inf,0.0,np.inf)),
 		default=[],
 		help="gaussian: name='' mu_lo=-inf mu_hi=inf sigma_lo=0 sigma_hi=inf c_lo=0 c_hi=inf"
+	)
+
+	parser.add_argument(
+		'--gaus-linear-dep','--gl',
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((str,float),("",1.0,1.0,1.0)),
+		default=[],
+		help="constrained gaus, parameters are linear scaling of gaus with same name. --gl name mu_ratio sigma_ratio c_ratio"
 	)
 
 
