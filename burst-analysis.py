@@ -305,6 +305,21 @@ def analyze_drift(args, ):
 
 	cluster_popt = np.stack([_[0] for _ in cluster_fit],axis=0)
 	cluster_pcov = np.stack([_[1] for _ in cluster_fit],axis=0)
+	cluster_chi2 = np.array([_[2] for _ in cluster_fit])
+	cluster_ndof = np.array([_[3] for _ in cluster_fit])
+	cluster_chi2_per_ndof = cluster_chi2 / cluster_ndof
+
+	print("chi2/ndof mean,std")
+	print(cluster_chi2_per_ndof.mean(), cluster_chi2_per_ndof.std())
+	print("cluster_popt mean,std; cluster_pcov mean,std")
+	print(fit_model.pnames)
+	for k in range(cluster_popt.shape[1]):
+		po = cluster_popt[:,k]
+		pc = cluster_pcov[:,k]
+		# print(" ".join([str(_) for _ in po]))
+		# print(" ".join([str(_) for _ in pc]))
+		print(po.mean(), po.std(), pc.mean(), pc.std(), sep=',',end=',')
+	print("")
 
 
 	# plot parameters

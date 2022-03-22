@@ -111,7 +111,58 @@ def csv_format_cuts(cuts):
 	# return cut_branches, cut_bounds
 	return cut_flat
 
+def edges_lin(xmin, xmax, nbins):
+	return np.linspace(xmin, xmax, nbins+1)
 
+def edges_log(xmin, xmax, nbins):
+	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
+
+def edges_symlog(xmin, xmax, nbins, l=1):
+	slxmin = symlog(xmin, l)
+	slxmax = symlog(xmax, l)
+	y = np.linspace(slxmin, slxmax, nbins+1)
+	return isymlog(y, l)
+
+def symlog(x, l):
+
+	isscalar = np.isscalar(x)
+	x = np.atleast_1d(x)
+
+	y = np.zeros(x.shape)
+	
+	ftr_pos = (x >  l)
+	ftr_neg = (x < -l)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+	
+	b=math.e/l
+	y[ftr_pos] =  np.log( b*x[ftr_pos])
+	y[ftr_neg] = -np.log(-b*x[ftr_neg])
+	y[ftr_lin] = x[ftr_lin] * (b/math.e)
+	
+	if isscalar:
+		return y[0]
+	else:
+		return y
+
+def isymlog(y, l):
+	
+	isscalar = np.isscalar(y)
+	y = np.atleast_1d(y)
+
+	x = np.zeros(y.shape)
+
+	ftr_pos = (y >  1)
+	ftr_neg = (y < -1)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+
+	x[ftr_pos] =  np.exp( y[ftr_pos] - 1)
+	x[ftr_neg] = -np.exp(-y[ftr_neg] - 1)
+	x[ftr_lin] = y[ftr_lin]
+
+	if isscalar:
+		return x[0] * l
+	else:
+		return x * l
 
 
 # analysis stages
@@ -558,10 +609,12 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 	edgeHi = fit_data.max() if fit_bounds[1] ==  np.inf else fit_bounds[1]
 	# if xlog argument supplied at least twice, bins are calculated in log space.
 	# warning: fitting to log bins has not been confirmed to be accurate.
-	if xlog>1:
-		edges = np.logspace(math.log(edgeLo,10),math.log(edgeHi,10),nbins+1)
+	if args["xsymlog"]:
+		edges = edges_symlog(edgeLo, edgeHi, nbins, args["xsymlog"])
+	elif xlog>1:
+		edges = edges_log(edgeLo, edgeHi, nbins)
 	else:
-		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
+		edges = edges_lin(edgeLo, edgeHi, nbins)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	# TODO: better handling of density: should be display-only, not at data level.
 	if density:
@@ -939,7 +992,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 # TODO split this functionality up into two parts
 #      a function to display fit data and results,
 #      and the save functionality handled by the class instance
-def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
+def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
 	
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
@@ -1021,9 +1074,14 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		plt.ylabel("counts")
 		
 		# apply axis scaling
-		if xlog:
+		if args["xsymlog"]:
+			plt.xscale("symlog",linthresh=args["xsymlog"], linscale=1/math.e)
+		elif xlog:
 			plt.xscale("log")
-		if ylog:
+
+		if args["ysymlog"]:
+			plt.yscale("symlog",linthresh=args["ysymlog"], linscale=1/math.e)
+		elif ylog:
 			plt.yscale("log")
 
 		
@@ -1177,15 +1235,17 @@ def main(args, suspend_show=False, colors={}):
 
 		if not nbins:
 			nbins = 50
-		if xlog>1:
-			pBins = [np.logspace(math.log(min((pLo[i]),(pData[i][pData[i]>0]).min()),10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
+		if args["xsymlog"]:
+			pBins = [edges_symlog(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins, args["xsymlog"]) for i in range(n_ds)]
+		elif xlog>1:
+			pBins = [edges_log(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins) for i in range(n_ds)]
 		else:
-			pBins = [np.linspace(pLo[i], pHi[i], nbins+1) for i in range(n_ds)]
+			pBins = [edges_lin(pLo[i], pHi[i], nbins) for i in range(n_ds)]
 
 		display.pairs2d(
 			pData,
 			pBins,
-			[xlog]*n_ds,
+			[args["xsymlog"] if args["xsymlog"] else bool(xlog)]*n_ds,
 			[_[0] for _ in fits],
 			cmap="afmhot",
 			cbad="grey",
@@ -1218,7 +1278,7 @@ def main(args, suspend_show=False, colors={}):
 		bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density)
 
 		# stage 3: display and output
-		display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
+		display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
 
 
 
@@ -1264,6 +1324,9 @@ if __name__ == '__main__':
 	parser.add_argument("-d"    ,dest="density",action="store_true",help="use density instead of counts for hist y axes")
 	parser.add_argument("--label" ,type=str,default="",dest='label',help="custom label")
 	parser.add_argument("--fill"  ,type=float,default=0.0,dest='fill',help="fill under histograms")
+
+	parser.add_argument("--xs",dest="xsymlog",type=float,default=None,help="sets x axis of figure to symmetric log scale")
+	parser.add_argument("--ys",dest="ysymlog",type=float,default=None,help="sets y axis of figure to symmetric log scale")
 
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
