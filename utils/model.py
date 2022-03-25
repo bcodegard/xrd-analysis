@@ -42,7 +42,7 @@ def convert_func_for_root(func,npars):
 
 
 
-def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
+def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False,rootfit=False):
 	"""performs a fit on xdata,ydata with xerr,yerr errors
 	assumes no covariance in x or y errors"""
 
@@ -56,7 +56,7 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 		if p > hi[ip]:p0[ip]=hi[ip]
 
 
-	if xerr:
+	if not ( (xerr is None) or (xerr is False) ):
 		pass
 
 		# is_fixed = [l==h for l,h in bounds]
@@ -85,9 +85,8 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 	print("fit_graph")
 	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
 
-
-	do_root_fit = False
-	if do_root_fit:
+	# rootfit = True
+	if rootfit:
 
 		# wrap function for ROOT expected format
 		func_for_root = convert_func_for_root(func, npars=len(p0))
@@ -134,7 +133,7 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False):
 
 	
 
-def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
+def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None,rootfit=False):
 	"""performs a fit on xdata,ydata assuming poisson errors on y and no errors on x"""
 
 	# get bounds into format expected
@@ -155,7 +154,7 @@ def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 		yerr = np.maximum(np.sqrt(ydata), 1)
 
 	popt, pcov = opt.curve_fit(func, xdata, ydata, p0=p0, sigma=yerr, absolute_sigma=True, bounds=[lo,hi])
-	
+
 	perr  = np.sqrt(np.diag(pcov))
 	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
 	# ndof  = xdata.size - len(popt)
@@ -165,8 +164,8 @@ def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None):
 	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
 
 
-	do_root_fit = False
-	if do_root_fit:
+	# rootfit = False
+	if rootfit:
 
 		# wrap function for ROOT expected format
 		func_for_root = convert_func_for_root(func, npars=len(p0))
@@ -325,13 +324,13 @@ class model_single(object):
 	def guess(self, x, y):
 		return self.arch.parameter_guess_function(x,y,self.bounds)
 
-	def fit(self, xdata, ydata, need_cov=False, p0=None, yerr=None, ):
+	def fit(self, xdata, ydata, need_cov=False, p0=None, yerr=None, rootfit=False):
 		if p0 is None:
 			p0 = self.guess(xdata, ydata)
-		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, yerr)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, yerr, rootfit=rootfit)
 
-	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
-		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov)
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False, rootfit=False):
+		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov, rootfit=rootfit)
 
 	def jacobian(self, x, *parameters):
 		if len(parameters) < self.npars:
@@ -409,13 +408,13 @@ class model_multiple(object):
 			p0 += c.guess(x,y)
 		return p0
 
-	def fit(self, xdata, ydata, need_cov=False, p0=None):
+	def fit(self, xdata, ydata, need_cov=False, p0=None, rootfit=False):
 		if p0 is None:
 			p0 = self.guess(xdata, ydata)
-		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, rootfit=rootfit)
 
-	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
-		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov)
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False, rootfit=False):
+		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov, rootfit=rootfit)
 
 
 
@@ -690,6 +689,54 @@ gaus=gaussian
 norm=gaussian
 normal=gaussian
 
+def gaus2d(r,c,x0,y0,s1,s2,t):
+	"""2d gaussian with center (x0,y0) and free axes
+	r is a [2,m] array where x = r[0,...] and y = r[1,...]"""
+	xp = r[0,...] - x0
+	yp = r[1,...] - y0
+	xp2 = xp**2
+	yp2 = yp**2
+	xpyp = xp*yp
+	del xp
+	del yp
+
+	ct = math.cos(t)
+	st = math.sin(t)
+	ct2 = ct**2
+	st2 = st**2
+	ctst = ct*st
+
+	l1 = (xp2*ct2 + yp2*st2 + 2*xpyp*ctst) / (2*(s1**2))
+	l2 = (xp2*st2 + yp2*ct2 - 2*xpyp*ctst) / (2*(s2**2))
+	return np.exp(-l1-l2)*c
+
+def gaus2d_guess(r,counts,bounds):
+	
+	# just guess the midway between bounds, except guess zero for theta
+	# guess = [(_[0] + _[1])*0.5 for _ in bounds[:-1]] + [0.0]
+	
+	c = counts.max()
+	csum = np.sum(counts)
+	x0 = np.sum(r[0] * counts) / csum
+	y0 = np.sum(r[1] * counts) / csum
+	t = math.atan(abs(y0/x0)) if x0 else 0.0
+	s1 = ((x0*math.cos(t))**2 + (y0*math.sin(t))**2)**0.5
+	s2 = ((x0*math.sin(t))**2 + (y0*math.cos(t))**2)**0.5
+	guess = [c,x0,y0,s1,s2,t]
+
+	print("guess",guess)
+	return guess
+
+gaus2d = function_archetype(
+	name="2d gaussian",
+	formula="c*exp( -0.5*( ((x-x0,y-y0).(cos(t),sin(t))/s1)**2 + ((x-x0,y-y0).(-sin(t),cos(t))/s2)**2 ) )",
+	pnames=["c","x0","y0","s1","s2","t"],
+	model_function   = gaus2d,
+	i_model_function = None,
+	parameter_guess_function = gaus2d_guess,
+	input_validation_function   = None,
+	i_input_validation_function = None
+)
 
 
 

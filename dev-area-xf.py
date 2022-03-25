@@ -388,7 +388,8 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 		energy,
 		area_err,
 		energy_err,
-		True
+		True,
+		rootfit=True,
 		)
 
 	# print((energy - energy_model(area, *popt)))
@@ -472,6 +473,10 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 
 
 if __name__ == '__main__':
+
+
+
+
 
 	compare_peaks_across_datasets = False
 	if compare_peaks_across_datasets:
@@ -712,7 +717,8 @@ if __name__ == '__main__':
 
 
 
-	plot_peak_area = True
+
+	plot_peak_area = False
 	if plot_peak_area:
 		desc = ''
 
@@ -820,7 +826,7 @@ if __name__ == '__main__':
 		plt.show()
 
 
-	fit_direct = False
+	fit_direct = True
 
 	if fit_direct:
 
@@ -862,6 +868,12 @@ if __name__ == '__main__':
 		branches=["area_3046_3","area_3046_4","area_3046_3","area_3046_4"]
 		file_src_spec  = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
 		file_test_spec = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
+
+
+		# assembly, 870V
+		branches = ["area_3046_1","area_3046_2","area_3046_3","area_3046_4"]
+		file_src_spec  = ["./data/fits/2022_03_18_src.csv"]*4
+		file_test_spec = ["./data/fits/2022_03_18_src.csv"]*4
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
@@ -869,7 +881,7 @@ if __name__ == '__main__':
 			901, # Am241 26.5KeV
 			# 200, # 31KeV Ba133
 			500, # 22KeV Cd109
-			100, # 32KeV Cs137
+			# 100, # 32KeV Cs137
 		]
 
 		
@@ -891,26 +903,29 @@ if __name__ == '__main__':
 				show_calibrations=True,
 			)
 
-			colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
-			test_spec = fileio.load_fits(ft)
-			# print([_.popt_gaus for _ in test_spec])
-			test_colors = colors_per_run[:len(test_spec)]
-			labels = ["cs", "cd", "ba", "co", "am"]
-			main(
-				test_spec,
-				branches[ifs],
-				energy_model,
-				ec_results,
-				None,
-				require_id=False,
-				colors=test_colors,
-				labels=labels,
-				plot_area=True,
-				plot_area_t1=False,
-				plot_energy=True,
-				plot_area_xf=False,
-				show=True,
-			)
+			# colors_list = ["r","b","g","tab:brown","darkviolet","k","darkred","c","m","y"]
+			# test_spec = [_ for _ in fileio.load_fits(ft) if _.fit_branch == branches[ifs]]
+			# # print([_.popt_gaus for _ in test_spec])
+			# # test_colors = colors_list[:len(test_spec)]
+			# # labels = ["cs", "cd", "ba", "co", "am",]
+			# test_colors = sum([[colors_list[i]]*_.ngaus for i,_ in enumerate(test_spec)],[])
+			# labels=["Ba133", "Co57", "Cd109", "Cs137"]
+			# main(
+			# 	test_spec,
+			# 	branches[ifs],
+			# 	energy_model,
+			# 	ec_results,
+			# 	None,
+			# 	require_id=False,
+			# 	colors=test_colors,
+			# 	labels=labels,
+			# 	plot_area=True,
+			# 	plot_area_t1=False,
+			# 	plot_energy=True,
+			# 	plot_area_xf=False,
+			# 	show=True,
+			# )
+
 
 
 	plop = False

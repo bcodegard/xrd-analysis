@@ -103,6 +103,8 @@ def pairs2d(
 	if show:
 		plt.show()
 
+	return gs
+
 def display2d(
 
 		xdata, ydata,
