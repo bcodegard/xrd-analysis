@@ -7,8 +7,7 @@ __author__ = "Brunel Odegard"
 __version__ = "0.0"
 
 
-
-
+import math
 import numpy as np
 
 
@@ -58,6 +57,23 @@ def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimi
 
 		return result
 
+def edges_lin(xmin, xmax, nbins):
+	return np.linspace(xmin, xmax, nbins+1)
+
+def edges_log(xmin, xmax, nbins):
+	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
+
+def edges_symlog(xmin, xmax, nbins, l=1):
+	slxmin = symlog(xmin, l)
+	slxmax = symlog(xmax, l)
+	y = np.linspace(slxmin, slxmax, nbins+1)
+	return isymlog(y, l)
+
+def bin_count_from_ndata(ndata, mult=4.0, minimum=50):
+	"""nbins proportional to sqrt(ndata), with minimum"""
+	nraw = math.ceil(mult * math.sqrt(ndata))
+	return max([minimum, nraw])
+
 
 
 
@@ -83,9 +99,65 @@ def fix_monotonic(array, round_to=0, copy=True):
 	new_array[1:][anomalies] += differentials
 	return new_array
 
+def symlog(x, l):
+
+	isscalar = np.isscalar(x)
+	x = np.atleast_1d(x)
+
+	y = np.zeros(x.shape)
+	
+	ftr_pos = (x >  l)
+	ftr_neg = (x < -l)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+	
+	b=math.e/l
+	y[ftr_pos] =  np.log( b*x[ftr_pos])
+	y[ftr_neg] = -np.log(-b*x[ftr_neg])
+	y[ftr_lin] = x[ftr_lin] * (b/math.e)
+	
+	if isscalar:
+		return y[0]
+	else:
+		return y
+
+def isymlog(y, l):
+	
+	isscalar = np.isscalar(y)
+	y = np.atleast_1d(y)
+
+	x = np.zeros(y.shape)
+
+	ftr_pos = (y >  1)
+	ftr_neg = (y < -1)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+
+	x[ftr_pos] =  np.exp( y[ftr_pos] - 1)
+	x[ftr_neg] = -np.exp(-y[ftr_neg] - 1)
+	x[ftr_lin] = y[ftr_lin]
+
+	if isscalar:
+		return x[0] * l
+	else:
+		return x * l
+
+def inrange(arr, lo, hi, lclosed=False, rclosed=False):
+	pieces = []
+	if lo not in [None, -np.inf]:
+		pieces.append(arr>=lo if lclosed else arr>lo)
+	if hi not in [None, np.inf]:
+		pieces.append(arr<=hi if rclosed else arr<hi)
+	if len(pieces) == 1:
+		return pieces[0]
+	else:
+		return np.logical_and(*pieces)
+
+
 
 
 # Accessor base class and subclasses
+# Currently, no Accessor class except the base class is implemented.
+# To create a new Accessor, sublass the Accessor class and overwrite the
+# Accessor.get method to interface with your data.
 
 class Accessor(object):
 	"""base class for Accessor types"""
@@ -93,6 +165,8 @@ class Accessor(object):
 		pass
 	def __nonzero__(self):
 		return True
+	def get(self, key_or_keys):
+		return False
 
 # class RootFileAccessor(Accessor):
 # 	"""Accessor object for loading branches as needed from root file"""
