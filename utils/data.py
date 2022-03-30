@@ -251,6 +251,10 @@ class BranchManager(object):
 	def bud(self, buds=[], keep=True, overwrite=False):
 		"""create new branch(es)"""
 		
+		# single bud -> list
+		if type(buds) not in (set, list, tuple):
+			buds=[buds]
+
 		# create dict of new branches
 		new_branches = {}
 		
@@ -315,7 +319,7 @@ class BranchManager(object):
 			return {key:value for key,value in masked_branches.items() if key in key_or_keys}
 		# other iterable: list of branches in order they appear in key_or_keys
 		else:
-			return [mask_branches[_] for _ in key_or_keys]
+			return [masked_branches[_] for _ in key_or_keys]
 
 
 
@@ -364,6 +368,12 @@ def cut(branch, lo=-np.inf, hi=np.inf):
 
 
 # built-in bud methods
+
+def bud_function(input_branch, output_branch, callable, args=[], kwargs={}):
+	"""callable(input_branch, *args, **kwargs) -> output_branch"""
+	def bud(manager):
+		return {output_branch:callable(manager[input_branch], *args, **kwargs)}
+	return bud
 
 def differentiate_branch(branch, suffix="deriv"):
 	"""calculates difference between each entry and the previous
