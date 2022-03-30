@@ -45,11 +45,16 @@ SHORTHAND = {
 }
 
 def replace_names(string, replacements):
+	"""make replacements in string only replacing substrings which
+	match a key in replacements surrounded by non-name characters,
+	IE not alphanumeric or underscores. This ensures that only whole
+	variable names are replaced, and not parts of variable names.
+	"""
 	if replacements:
 		for pre, post in replacements.items():
 			string = re.sub(
-				r"(^|\W){pre}($|\W)".format(pre=pre),
-				"\\g<1>{post}\\g<2>".format(post=post),
+				r"(^|\W){pre}(?=$|\W)".format(pre=pre),
+				"\\g<1>{post}".format(post=post),
 				string,
 			)	
 	return string
