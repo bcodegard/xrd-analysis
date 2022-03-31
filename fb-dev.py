@@ -28,6 +28,7 @@ import utils.expression as expr
 
 # todo: put this in a config file instead of code
 ROOT_FILE_DIR = "../xrd-analysis/data/root/scintillator/Run{}.root"
+ARG_MULTI = ["AND","and"]
 
 # shorthand for common branches, EG a1 -> area_xxxx_1
 SHORTHAND = {
@@ -106,7 +107,6 @@ def procure_data(args):
 		# case lets us supply all fits via --fit if desired.
 		if fit[0] is None:
 			continue
-		print(fit[0], replace_names(fit[0], replacements))
 		fn = expr.check_and_compile(replace_names(fit[0], replacements))
 		fn_fits.append(fn)
 		branches_needed |= fn.kwargnames
@@ -202,6 +202,17 @@ def procure_data(args):
 		n_remaining = n_remaining_now
 
 
+	# wrapper functions to capture loop variable values
+	# if we don't use these, the overwritten value of fn and other
+	# variables used in the loop will change, and the change will affect
+	# the function calls to calculate masks
+	def mask_bool(fn):
+		mask = lambda man:fn(**{_:man[_] for _ in fn.kwargnames})
+		return mask
+	def mask_range(fn,lo,hi):
+		mask = lambda man:data.inrange(fn(**{_:man[_] for _ in fn.kwargnames}),lo,hi)
+		return mask
+	
 	# process cuts
 	masks = []
 	for icut,fn in enumerate(fn_cuts):
@@ -209,11 +220,11 @@ def procure_data(args):
 
 		# no bounds specified: boolean expression
 		if (this_cut[1] is None) and (this_cut[2] is None):
-			masks.append(lambda man:fn(**{_:man[_] for _ in fn.kwargnames}))
+			masks.append(mask_bool(fn))
 
-		# at least one boundspecified: lo<expression<hi
+		# at least one bound specified: lo<expression<hi
 		else:
-			masks.append(lambda man:data.inrange(fn(**{_:man[_] for _ in fn.kwargnames}),this_cut[1],this_cut[2]))
+			masks.append(mask_range(fn,this_cut[1],this_cut[2]))
 
 	# apply cuts
 	if masks:
@@ -264,18 +275,45 @@ def procure_data(args):
 	return fit_counts, fit_edges
 
 
-def main(args):
-	print(args)
+def model_counts(args, fit_counts, fit_edges):
+	return None
+
+
+def display_and_write(args, fit_counts, fit_edges, model_results_placeholder):
+	return None
+
+
+def main(args,iset=None,nsets=None):
+	""""""
+
+	# todo: verbosity argument that controls what information is printed
+	#       better printing for args; detail based on verbosity
+	# 
+	# todo: class that holds all kept information which is not stored
+	#       explicitly in args, and is passed to each analysis stage to
+	#       be accessed and updated. This would allow more convenient
+	#       handling and access for the information, as well as allow
+	#       functionality such as packing data to a CSV format to be
+	#       defined within the class.
+
+	# placeholder diagnostic info: just pring whole set of args
+	klmax = max([len(_) for _ in vars(args).keys()])
+	print("args")
+	for i,kv in enumerate(vars(args).items()):
+		print("{} : {}".format(str(kv[0]).ljust(klmax), kv[1]))
+	print("")
 
 	# load, process, cut, and bin data into form ready for fitting
 	fit_counts, fit_edges = procure_data(args)
 
+	# construct models and fit them to data
+	model_results_placeholder = model_counts(args, fit_counts, fit_edges)
+
+	# display and/or save information
+	display_and_write(args, fit_counts, fit_edges, model_results_placeholder)
 
 
-
-
-
-	# testing fit data results: just show plots
+	# testing fit data results: just show plots with counts
 	for i,fit in enumerate(args.fits):
 		plt.step(
 			(fit_edges[i][1:]+fit_edges[i][:-1])*0.5,
@@ -287,7 +325,9 @@ def main(args):
 	plt.ylabel("counts")
 	plt.yscale("log")
 	if fit[4].startswith("lo"):plt.xscale("log")
-	plt.show()
+	
+	if (iset is None) or (iset == nsets-1):
+		plt.show()
 
 
 
@@ -402,20 +442,125 @@ if __name__ == '__main__':
 	# timestamp localization
 	parser.add_argument(
 		"--no-timestamp-local","--ntl",
-		action="store_false",
 		dest="localize_timestamps",
+		action="store_false",
 		help="don't localize timestamps",
 	)
 
 
 	# fitting arguments
-	...
+
+	# arbitrary functions, specifing function name as first argument
+	# and parameter specifications as subsequent arguments.
+	# 
+	# Since there is one specification per parameter, and different
+	# functions have different numbers of parameters, we can't know 
+	# how many defaults to add.
+	# Instead, we'll have to pad the arguments with additional defaults
+	# when parsing the entries.
+	component_callables = (str, )
+	component_defaults  = ("", )
+	parser.add_argument(
+		"--add-component", "--add", "--a",
+		dest="components",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=(component_callables, component_defaults),
+		help="""add a model component by name.
+		--add fn_name par_1 par_2 ...""",
+	)
+
+	# specific common functions such as gausians
+	# 
+	# we do know how many parameters each one of these takes
+	# but since the destination and format are identical to --add,
+	# and we'll need to handle the parameter count to support --add,
+	# there's no reason to include that information here. We get it
+	# for free.
+	# 
+	# we do have to a bit of lambda-waving to get the resulting format
+	# to agree with that of --add
+	def merge_and_concat(left,callables,defaults):
+		"""return a function which performs a merge using callables
+		and defaults, then concatenates the result with left
+		"""
+		if type(left) in (tuple,set):
+			left=list(left)
+		elif type(left) is not list:
+			left = [left]
+		return lambda values:left+cli.merge(values,callables,defaults)
+	parser.add_argument(
+		"--gaus","--g",
+		dest="components",
+		type=str,
+		nargs="*",
+		action=cli.FunctionAppendAction,
+		const=merge_and_concat("gaus",component_callables,component_defaults),
+		help="""add a gaussian to the fit model. --g par_1 ... 
+		Equivalent to --add gaus par_1 ...""",
+	)
+
+	# free parameter creation
+	parser.add_argument(
+		"--parameter", "--par", "--p",
+		dest="free_parameters",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((str, float), ("", -np.inf, np.inf, 0)),
+		default=[],
+		help="""add free parameters for use in other parameter expressions.
+		--par name lo=-inf hi=inf guess=0""",
+	)
+
+	# reference spectrum
+	# 
+	# todo: how best to implement this feature, concerning:
+	#       how should parameters be controlled?
+	#       how should the user specify the method and its options?
+	#       should the reference spectrum's parameters be accessible
+	#       to other components of the model, and how?
+	# 
+	# given that the future approach for modeling spectra for XRD will
+	# be more deliberately constructed, perhaps it's not worth
+	# implementing this feature.
 
 
+	# display and output arguments
 
-	args = parser.parse_args()
+	# composing figure(s)
 
-	# remove fit args with empty expression
-	args.fits = [_ for _ in args.fits if _[0] is not None]
+	# saving figure(s)
 
-	main(args)
+	# saving data
+
+
+	# todo: parallel call support
+	#       multiple complete argument sets separated by "AND"
+	#       call main using each set of arguments in turn, indicating
+	#       which set (index) each is.
+
+	# at least one call delimeter argument is present
+	if any(_ in sys.argv for _ in ARG_MULTI):
+		arg_sets = []
+		current_set = []
+		for arg in sys.argv[1:]:
+			if arg in ARG_MULTI:
+				arg_sets.append(current_set)
+				current_set = []
+			else:
+				current_set.append(arg)
+		arg_sets.append(current_set)
+		nsets = len(arg_sets)
+		for i,arg_set in enumerate(arg_sets):
+			this_args = parser.parse_args(arg_set)
+			this_args.fits = [_ for _ in this_args.fits if _[0] is not None]
+			main(this_args, i, nsets)
+
+	# no call delimeter argument is present
+	else:
+		args = parser.parse_args()
+		# remove fit args with empty expression
+		args.fits = [_ for _ in args.fits if _[0] is not None]
+		main(args)
