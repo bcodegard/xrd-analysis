@@ -933,7 +933,7 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 		# add suppressed monomials
 		smono_bounds = []
 		for ism,sm in enumerate(smono):
-			this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
+			this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0]-1,sm[0]+1]]
 			smono_bounds.append(this_bounds)
 			order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
 			fit_model_components.append(model.smono(this_bounds))

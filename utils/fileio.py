@@ -235,7 +235,13 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 		# load arrays from each rootkey and concatenate
 		for rk in rootkey:
 
-			tree = root_obj[rk]
+			# print(rootfile)
+			# bit of a hack here
+			if 'simulation' in rootfile:
+				tree = root_obj[rk]["ROOTEvent"]
+			else:
+				tree = root_obj[rk]
+			
 			keys = tree.keys()
 
 			branches_get = [_ for _ in keys if to_str(_) in which]
