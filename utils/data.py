@@ -80,6 +80,18 @@ def bin_count_from_ndata(ndata, mult=4.0, minimum=50):
 # data processing algorithms
 # for internal and external use
 
+def chi2_identical_poisson(a,b):
+	"""calculate reduced chi2 for the hypothesis that pairs of elements
+	from a and b are drawn from identical poisson distributions"""
+	
+	# exclude points where a and b are both zero
+	ftr_valid = (a>0)|(b>0)
+	av = a[ftr_valid]
+	bv = b[ftr_valid]
+
+	# return chi2, ndof
+	return (((av-bv)**2)/(av+bv)).sum(), ftr_valid.sum()
+
 def rectify(array, radius):
 	"""raises values if they are lower than all their neighbors"""
 	max_l = np.stack([np.roll(array, _) for _ in range(-radius, 0       )],axis=0).max(0)
@@ -401,7 +413,7 @@ class BranchManager(object):
 # built-in mask methods
 
 def mask_range(lo=0,hi=np.inf):
-	"""convenient and computationally efficient method for selecting listeral range in data
+	"""convenient and computationally efficient method for selecting literal range in data
 	does not cut on "entry" branch; rather, cuts on index of arrays first axes
 	which will be different if any cuts have previously been applied"""
 	def mask(manager):

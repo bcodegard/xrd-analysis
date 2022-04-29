@@ -864,18 +864,18 @@ class routine(object):
 		# 	'r.'
 		# )
 
-		plt.errorbar(
-			np.array([peaks[_].e for _ in ids]),
-			popt[i_w_id:],
-			perr[i_w_id:],
-			# [0.0 for _ in ids],
-			color='k',
-			marker='.',
-			ls=''
-		)
-		plt.xlabel('peak energy (KeV)')
-		plt.ylabel('Fp (peak factor)')
-		plt.show()
+		# plt.errorbar(
+		# 	np.array([peaks[_].e for _ in ids]),
+		# 	popt[i_w_id:],
+		# 	perr[i_w_id:],
+		# 	# [0.0 for _ in ids],
+		# 	color='k',
+		# 	marker='.',
+		# 	ls=''
+		# )
+		# plt.xlabel('peak energy (KeV)')
+		# plt.ylabel('Fp (peak factor)')
+		# plt.show()
 
 
 
@@ -905,6 +905,7 @@ class routine(object):
 				this_incl = self.include[ftr_this]
 				this_excl = np.logical_not(this_incl)
 
+				this_v   = self.v[   ftr_this ][this_incl]
 				this_mu  = self.mu[  ftr_this ][this_incl]
 				this_s   = self.s[   ftr_this ][this_incl]
 				this_se  = self.se[  ftr_this ][this_incl]
@@ -913,37 +914,89 @@ class routine(object):
 				this_ch = np.ones(this_mu.shape, dtype=int) * ch
 				this_id = np.ones(this_mu.shape, dtype=int) * _id
 				this_xdata = np.stack([this_s,this_mu,this_ch,this_id,this_e])
-				
-				if any(this_incl):
-					this_ax.errorbar(
-						this_mu ,
-						this_s  ,
-						this_se ,
-						this_mue,
-						color=color_by_ch[ch],
-						marker=marker_by_src[_id//100],
-						ls='',
-					)
 
+				# # model plot
+				# plot_x  = self.mu  # self.v
+				# plot_xe = self.mue # 0.0
+				# plot_y  = self.s   # 
+				# plot_ye = self.se  # 
+				# xlabel  = "mu (pVs)"
+				# ylabel  = "sigma (pVs)"
+
+				# resolution plots
+				res     = self.s / self.mu
+				res_err = res * np.sqrt((self.mue/self.mu)**2 + (self.se/self.s)**2)
+				plot_y  = res
+				plot_ye = res_err
+				ylabel  = "R = sigma / mu"
+
+
+				# # vs. mu
+				# plot_x  = self.mu
+				# plot_xe = self.mue
+				# xlabel  = "mu (pVs)"
+
+				# # vs. bias
+				# plot_x  = self.v
+				# plot_xe = None
+				# xlabel  = "bias (volts)"
+
+				# vs. energy
+				plot_x  = self.e
+				plot_xe = self.ee
+				xlabel  = "peak energy (KeV)"
+				# res(E) model plot
+				W_TO_S = (8 * math.log(2)) ** 0.5
+				res_s  =  {1:0.100, 2:0.075, 3:0.075}[ch] / W_TO_S
+				rp_rref = {1:0.035, 2:0.038, 3:0.038}[ch] # pmt resolution contr. at the reference energy
+				rp_eref = {1:122  , 2:122  , 3:122  }[ch] # some reference energy
+				rho_p = rp_eref * rp_rref**2 # calculate rho_p from these quantities
+				xe = np.logspace(1,3,100)
+				ye = np.sqrt(res_s**2 + (rho_p / xe))
+				this_ax.plot(xe, ye, 'k-', label='eyeball')
+
+
+				# plot excluded
 				if any(this_excl):
+					excl_x  = plot_x[ftr_this][this_excl]
+					excl_y  = plot_y[ftr_this][this_excl]
+					excl_xe = None if plot_xe is None else plot_xe[ftr_this][this_excl]
+					excl_ye = None if plot_ye is None else plot_ye[ftr_this][this_excl]
 					this_ax.errorbar(
-						self.mu[  ftr_this ][this_excl],
-						self.s[   ftr_this ][this_excl],
-						self.se[  ftr_this ][this_excl],
-						self.mue[ ftr_this ][this_excl],
+						excl_x   ,
+						excl_y   ,
+						excl_ye,
+						excl_xe,
 						color=alt_color_by_ch[ch],
 						marker=marker_by_src[_id//100],
 						ls='',
 					)
 
+				# plot included
+				if any(this_incl):
+					incl_x  = plot_x[ftr_this][this_incl]
+					incl_y  = plot_y[ftr_this][this_incl]
+					incl_xe = None if plot_xe is None else plot_xe[ftr_this][this_incl]
+					incl_ye = None if plot_ye is None else plot_ye[ftr_this][this_incl]
+					this_ax.errorbar(
+						incl_x   ,
+						incl_y   ,
+						incl_ye,
+						incl_xe,
+						color=color_by_ch[ch],
+						marker=marker_by_src[_id//100],
+						ls='',
+					)
+
 				# plot fit results
-				this_ax.plot(
-					this_mu,
-					fit_model(this_xdata, *popt),
-					color=color_by_ch[ch],
-					marker='',
-					ls='--',
-				)
+				if any(this_incl) and (plot_y is self.s):
+					this_ax.plot(
+						incl_x,
+						fit_model(this_xdata, *popt),
+						color=color_by_ch[ch],
+						marker='',
+						ls='--',
+					)
 
 
 		devices = ["BigNaI", "SmallNaI 1", "SmallNaI 2", "big LYSO"]
@@ -982,8 +1035,8 @@ class routine(object):
 				ax.legend(handles=legend_items)
 
 			# markup and show plot
-			ax.set_xlabel("mu (pVs)")
-			ax.set_ylabel("sigma (pVs)")
+			ax.set_xlabel(xlabel)
+			ax.set_ylabel(ylabel)
 			ax.set_xscale("log")
 			ax.set_yscale("log")
 		
@@ -1024,7 +1077,11 @@ def gain_curve(
 		):
 
 	rtn = routine()
+	
+	print("\nget peak data")
 	rtn.get_peak_data(SPE_FILES, SRC_FILES)
+
+	print("\nperform fit")
 	rtn.perform_fit(
 		v_lim_by_id=v_lim_by_id,
 		a_lim_by_ch=a_lim_by_ch,
@@ -1035,9 +1092,11 @@ def gain_curve(
 		constants=False,
 	)
 
+	print("\nanalyze mu vs sigma")
 	rtn.analyze_mu_vs_sigma()
 	sys.exit(0)
 	
+	print("\ndisplay results (absolute)")
 	rtn.display_results(
 		plot_channels = [1,2,3],
 		plot_separate = True,
@@ -1051,6 +1110,7 @@ def gain_curve(
 		suptitle=suptitle,
 	)
 
+	print("\ndisplay results (residuals)")
 	rtn.display_results(
 		plot_channels = [1,2,3],
 		plot_separate = True,

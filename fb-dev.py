@@ -12,9 +12,11 @@ import re
 import sys
 import math
 import argparse
+import itertools
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 
 import utils.cli     as cli
 import utils.data    as data
@@ -30,7 +32,8 @@ import utils.expression as expr
 BRANCHES_CONSTRUCT = ['entry']
 
 # todo: put this in a config file instead of code
-ROOT_FILE_DIR = "../xrd-analysis/data/root/scintillator/Run{}.root"
+ROOT_FILE = "../xrd-analysis/data/root/scintillator/Run{}.root"
+FIG_FILE = "./figs/{}"
 ARG_MULTI = ["AND","and"]
 
 # shorthand for common branches, EG a1 -> area_xxxx_1
@@ -63,6 +66,7 @@ def replace_names(string, replacements):
 			)	
 	return string
 
+iseq = lambda x,y,eps=1e-9:abs(x-y)<eps
 
 
 
@@ -75,7 +79,7 @@ def procure_data(args):
 	# look up list of all branches in the specified root file
 	# determine four-digit number of DRS board used
 	# apply shorthand (a1 -> area_xxxx_1, etc.)
-	root_file = args.run if os.sep in args.run else ROOT_FILE_DIR.format(args.run)
+	root_file = args.run if os.sep in args.run else ROOT_FILE.format(args.run)
 	branches_all = fileio.get_keys(root_file)
 	# find all channels present by matching noise_*
 	channels = {_.rpartition("_")[2] for _ in branches_all if _.startswith("noise_")}
@@ -329,16 +333,51 @@ def main(args,iset=None,nsets=None):
 			where='mid',
 			label=fit[5] if fit[5] else fit[0],
 		)
+
+	# hlines and vlines
+	for loc,col,ls,label in args.vlines:
+		plt.axvline(loc, color=col, ls=ls, label=label)
+	for loc,col,ls,label in args.hlines:
+		plt.axhline(loc, color=col, ls=ls, label=label)
+	for lo,hi,fc,alph,ec,lw,label in args.vspans:
+		facecolor = colors.to_rgb(fc)+(alph,)
+		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
+		plt.axvspan(
+			lo,hi,
+			facecolor=facecolor,
+			edgecolor=edgecolor,
+			linewidth=lw,
+			label=label,
+		)
+	for lo,hi,fc,alph,ec,lw,label in args.hspans:
+		facecolor = colors.to_rgb(fc)+(alph,)
+		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
+		plt.axhspan(
+			lo,hi,
+			facecolor=facecolor,
+			edgecolor=edgecolor,
+			linewidth=lw,
+			label=label,
+		)
+
+
+	# decoration
 	plt.legend()
 	plt.ylabel("counts")
 	plt.yscale("log")
+	if args.title:
+		plt.title(args.title)
+
+	# scaling
 	if fit[4].startswith("lo"):
 		plt.xscale("log")
 	elif fit[4].startswith("s"):
 		...
 	
-	if (iset is None) or (iset == nsets-1):
-		plt.show()
+	# if (iset is None) or (iset == nsets-1):
+	# 	plt.show()
+
+	return fit_counts, fit_edges
 
 
 
@@ -538,15 +577,86 @@ if __name__ == '__main__':
 	# implementing this feature.
 
 
+	# other analytic features
+	parser.add_argument("--check-consistent","--cc",action="store_true",help="assess whether spectra are consistent with each other")
+
+
 	# display and output arguments
+	# 
+	# todo: add format code support for title (E.G. {chi2} {dof} etc. get replaced by results of fit routine)
+	parser.add_argument("--title","--t",dest="title",type=str,default="",help="figure title")
+	parser.add_argument(
+		"--vline","--vl",
+		dest="vlines",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((float, str),(0.0, "k", "-", None)),
+		default=[],
+		help="add vlines. --vl location color=k linestyle=solid label=None",
+	)
+	parser.add_argument(
+		"--hline","--hl",
+		dest="hlines",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((float, str),(0.0, "k", "-", None)),
+		default=[],
+		help="add hlines. --hl location color=k linestyle=solid label=None",
+	)
+	parser.add_argument(
+		"--vspan","--vs",
+		dest="vspans",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((float, float, str, float, str, int, str),(0.0, 1.0, "k", 0.1, None, 1, None)),
+		default=[],
+		help="add vspans. --vl lo=0 hi=1 color=k alpha=0.1 edgecolor=None linewidth=1 label=None",
+	)
+	parser.add_argument(
+		"--hspan","--hs",
+		dest="hspans",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((float, float, str, float, str, int, str),(0.0, 1.0, "k", 0.1, None, 1, None)),
+		default=[],
+		help="add hspans. --hl lo=0 hi=1 color=k alpha=0.1 edgecolor=None linewidth=1 label=None",
+	)
+
 
 	# composing figure(s)
 
 	# saving figure(s)
+	parser.add_argument(
+		"--save-fig","--svf","--sf",
+		dest="save_fig",
+		type=str,
+		nargs="+",
+		action=cli.MergeAction,
+		const = ((str, int, str), ("", 100, "png")),
+		default=False,
+		help="save figure to filename"
+	)
+	parser.add_argument("--no-show","--ns",dest="show",action="store_false",help="don't show the figure")
 
 	# saving data
 
 
+	# TODO: create routine class, like used in dev-gain.py
+	#       accumulate class instances while executing argument sets
+	#       pass list of routines to display-and-save function
+	#       routine class has functions which draw to / modify a figure
+
+	# accumulate fit results for making comparisons
+	check_counts = []
+	check_edges  = []
+
+	# dict of format strings to replace in figure title
+	title_keys = {}
+	
 	# at least one call delimeter argument is present
 	if any(_ in sys.argv for _ in ARG_MULTI):
 		arg_sets = []
@@ -559,14 +669,81 @@ if __name__ == '__main__':
 				current_set.append(arg)
 		arg_sets.append(current_set)
 		nsets = len(arg_sets)
+
 		for i,arg_set in enumerate(arg_sets):
 			this_args = parser.parse_args(arg_set)
 			this_args.fits = [_ for _ in this_args.fits if _[0] is not None]
-			main(this_args, i, nsets)
+			this_counts, this_edges = main(this_args, i, nsets)
+			if this_args.check_consistent:
+				check_counts += this_counts
+				check_edges  += this_edges
+
+		# copy last arg set as reference for plotting related args
+		# todo: better handling of display args across sets
+		args = this_args
 
 	# no call delimeter argument is present
 	else:
 		args = parser.parse_args()
 		# remove fit args with empty expression
 		args.fits = [_ for _ in args.fits if _[0] is not None]
-		main(args)
+		counts, edges = main(args)
+		if args.check_consistent:
+			check_counts += counts
+			check_edges  += edges
+
+	# if requested by any sub-call, check whether each pair of spectra is consistent
+	if check_counts:
+		for ia,ib in itertools.combinations(range(len(check_counts)), 2):
+
+			ca = check_counts[ia]
+			cb = check_counts[ib]
+			print("\ncomparison {},{}".format(ia,ib))
+
+			# skip if different shapes
+			if ca.shape != cb.shape:
+				print("skip: different shapes {},{}".format(ca.shape,cb.shape))
+				continue
+
+			# skip if bins are different
+			edge_diff_sum = (check_edges[ia]-check_edges[ib]).sum()
+			if not iseq(0, edge_diff_sum):
+				print("skip: different bin edges, diff sum = {}".format(edge_diff_sum))
+
+			# check consistency
+			chi2, ndof = data.chi2_identical_poisson(ca, cb)
+			print("chi2 / ndof = {:.4f}/{} = {:.3f}".format(
+				chi2,
+				ndof,
+				chi2/ndof,
+			))
+
+			title_keys['chi2'] = title_keys['chisq'] = chi2
+			title_keys['dof']  = title_keys['ndof']  = ndof
+			title_keys['c2d']  = chi2/ndof
+
+
+	class ddict(dict):
+		"""dict sublass which returns "{key}" for missing key"""
+		def __missing__(self,key):
+			return '{'+key+'}'
+	fig = plt.gcf()
+	title = fig.axes[0].get_title()
+	plt.title(title.format_map(ddict(title_keys)))
+
+	if args.save_fig:
+		fname, dpi, fmt = args.save_fig
+		if '.' not in fname:
+			fname = '{}.{}'.format(fname, fmt)
+		if fname:
+			plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
+
+	if args.show:
+		plt.show()
+
+
+
+
+
+
+
