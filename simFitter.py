@@ -163,9 +163,86 @@ class binned_projector(object):
 
 class param_holder(object):
 	"""basically just an attribute holder"""
-	def __init__(self, params):
+
+	RESERVED_ATTRIBUTES = [
+		
+		# global attributes
+		"RESERVED_ATTRIBUTES",
+
+		# unprotected method names
+		"setup",
+		"set_param_attr",
+		"set_varied",
+		"set_result",
+		
+		# information about parameter order
+		"fixed" ,
+		"varied",
+		"v_names",
+		"f_names",
+		"v_index",
+		"f_index",
+
+		# ordered parameter values and covariance
+		"v_values",
+		"f_values",
+		"v_opt" ,
+		"v_cov" ,
+		"v_err" ,
+
+		# fit results
+		"chi2"  ,
+		"ndof"  ,
+		"rchi2" ,
+	]
+	
+	def __init__(self, params, fixed=None, v_names=None, f_names=None):
+		self.setup(params, fixed, v_names, f_names)
+
+	def setup(self, params, fixed, v_names, f_names):
+		
+		# set attributes and values
 		for k,v in params.items():
-			self.__setattr__(k,v)
+			self.set_param_attr(k,v)
+
+		# same dict of {"name":value} as used by parametrizer
+		self.fixed = fixed
+
+		# ordered lists of param names
+		# so that the ordered information in opt, cov, etc. can be used
+		self.v_names = v_names
+		self.f_names = f_names
+
+		if self.v_names is not None:
+			self.v_index  = {n:i for i,n in enumerate(self.v_names)}
+			self.v_values = [params[_] for _ in self.v_names]
+		if self.f_names is not None:
+			self.f_index = {n:i for i,n in enumerate(self.f_names)}
+			self.f_values = [params[_] for _ in self.f_names]
+
+	def set_param_attr(self,key,value):
+		"""deny parameter names found in RESERVED_ATTRIBUTES"""
+		if (key in self.RESERVED_ATTRIBUTES) or (key.startswith("_")):
+			raise ValueError("illegal parameter name {}".format(key))
+		else:
+			self.__setattr__(key,value)
+
+	def set_varied(self, v_values, v_cov=None):
+		"""Set the values and optionally covariance of varied parameters"""
+		# v_values should be a list, and have the same order
+		# todo: support dict -> list
+		#       can't do that for v_cov though, so maybe not worth it.
+		self.v_values = self.v_opt = v_values
+		self.v_cov = v_cov
+		self.v_err = np.sqrt(np.diag(self.v_cov))
+
+	def set_result(self, chi2, ndof):
+		self.chi2 = chi2
+		self.ndof = ndof
+		self.rchi2 = chi2/ndof
+
+
+
 
 class parametrizer(object):
 	"""docstring for parametrizer"""
@@ -207,39 +284,63 @@ class parametrizer(object):
 				self._names.append(name)
 
 
-	def _compose_params(self, pk, fixed):
+	def _compose_params(self, pk, fixed, embellish=False):
 		params = {}
 		k = 0
 		for name in self._names:
 			# fixed parameter specified by "name":value
 			if name in fixed:
 				value = fixed[name]
-			# free parameter
+			# varied parameter
 			else:
 				value = pk[k]
 				k += 1
 			params[name] = value
-		return param_holder(params)
+		if embellish:
+			return param_holder(params, fixed, self._get_names_varied(fixed), self._get_names_fixed(fixed))
+		else:
+			return param_holder(params)
 
-	def _get_free_names(self,fixed):
+	def _get_names_varied(self,fixed):
 		"""get list of names that are not in fixed"""
-		return [_ for _ in enumerate(self._names) if _ not in fixed]
+		return [_ for _ in self._names if _ not in fixed]
 
-	def _wrap(self, f, fixed):
-		"""wrap function f(p, *args, **kwargs) into for where the
+	def _get_names_fixed(self,fixed):
+		"""get list of names that are in fixed"""
+		return [_ for _ in self._names if _ in fixed]		
+
+	def _wrap_for_curve_fit(self, f, f_args=[], f_kwargs={}, fixed={}):
+		"""wrap function f(p, *args, **kwargs) into form where the
 		parameters are specified sequentially, for use in optimization."""
-
-		def wrapped(pk, *args, **kwargs):
-
+		def wrapped(xdata, *pk):
 			# compose object with attributes from pk
 			p = self._compose_params(pk, fixed)
-
-			return f(p, *args, **kwargs)
-
+			return f(xdata, p, *f_args, **f_kwargs)
 		return wrapped
 
-	def minimize(self, f, f_args=[], f_kwargs={}, fixed=None, bounds=None, p0=None):
-		""""""
+	def _wrap_for_approx_fprime(self, f, f_args=[], f_kwargs={}, fixed={}):
+		def wrapped(pk):
+			p = self._compose_params(pk, fixed)
+			return f(p,*f_args,**f_kwargs)
+		return wrapped
+
+	def _get_p0_varied_list(self, names_varied):
+		return [self._guess.get(_,0.0) for _ in names_varied]
+
+	def get_p0(self, fixed=None):
+		...
+
+	def fit_independent_poisson(self):
+		...
+		# todo: poisson log-likelihood minimizer
+		#       this will be much more able to account for low statistics in the y data
+		#       but requires a bit more work to get covariances out of.
+		#       
+		#       for now, just try to keep bin sizes big enough (>10 ok, >20 ideal)
+
+
+	def curve_fit(self, xdata, ydata, yerr, f, f_args=[], f_kwargs={}, fixed=None, bounds=None, p0=None):
+		"""fits f(p, *f_args, **f_kwargs) = ydata, using given yerr as sigma"""
 
 		# ensure type(fixed) is dict
 		# None -> empty dict
@@ -247,13 +348,13 @@ class parametrizer(object):
 			fixed = {}
 
 		# convert function to form f([p1, p2, ..., pm], *args, **kwargs)
-		# m is the number of free parameters, which is the total number of
+		# m is the number of varied parameters, which is the total number of
 		# parameters registered in self._names, minus the number of
 		# fixed parameters.
-		f_wrapped = self._wrap(f, fixed)
+		f_wrapped = self._wrap_for_curve_fit(f, f_args, f_kwargs, fixed)
 
 		# get list of parameter names which are not fixed
-		names_free = self._get_free_names(fixed)
+		names_varied = self._get_names_varied(fixed)
 
 
 		# Compose p0. Resulting object is list.
@@ -262,9 +363,10 @@ class parametrizer(object):
 		# Since you don't know the order of the parameters, as an
 		# iterable is inappropriate
 		if p0 is None:
-			p0 = [self._guess.get(_,0.0) for _ in names_free]
+			p0 = self._get_p0_varied_list(names_varied)
+
 		else:
-			p0 = [p0.get(_,self._guess.get(_,0.0)) for _ in names_free]
+			p0 = [p0.get(_,self._guess.get(_,0.0)) for _ in names_varied]
 
 		# Compose bounds. Resulting object is [[lo, ...], [hi, ...]]
 		# 
@@ -273,138 +375,156 @@ class parametrizer(object):
 		NO_BOUNDS = (-np.inf, np.inf)
 		if bounds is None:
 			bounds = NO_BOUNDS
+			# pass
 		else:
 			bounds = [
-				[bounds.get(_,NO_BOUNDS)[0] for _ in names_free],
-				[bounds.get(_,NO_BOUNDS)[1] for _ in names_free],
+				[bounds.get(_,NO_BOUNDS)[0] for _ in names_varied],
+				[bounds.get(_,NO_BOUNDS)[1] for _ in names_varied],
 			]
 
-		result = opt.least_squares(
-			f_wrapped, 
-			p0,
-			bounds = bounds,
-			args=f_args,
-			kwargs=f_kwargs,
+		v_opt, v_cov = opt.curve_fit(
+			f = f_wrapped,
+			xdata = xdata,
+			ydata = ydata,
+			p0 = p0,
+			sigma = yerr,
+			absolute_sigma = True,
 		)
+		param_result = self._compose_params(v_opt, fixed, True)
+		param_result.set_varied(v_opt, v_cov)
 
-		# calculate stuff based on assuming that pulls are unit norm
-		chi2  = (result.fun ** 2).sum()
-		ndof  = result.fun.size - result.x.size
+		y_opt = f_wrapped(xdata, *v_opt)
+		y_resid = ydata - y_opt
+		y_pull = y_resid / yerr
+
+		chi2  = (y_pull**2).sum()
+		ndof  = ydata.size - v_opt.size
 		rchi2 = chi2/ndof
-		hess  = np.matmul(np.transpose(result.jac), result.jac)
-		cov   = np.linalg.inv(hess) * rchi2
 
-		result.chi2  = chi2
-		result.ndof  = ndof
-		result.rchi2 = rchi2
-		result.hess  = hess
-		result.xcov  = cov
+		param_result.set_result(chi2, ndof)
 
-		return self._compose_params(result.x, fixed), names_free, result
+		return param_result
 
 
+	def scalar_num_error_p_only(self, param, f, f_args=[], f_kwargs={}):
+		"""Calculate error on the scalar quantity
+		f(param, *f_args, **f_kwargs)
+		assuming that the only source of error is the covariance of
+		the parameters in param."""
 
+		# wrap f(param_holder param, *f_args, **f_kwargs)
+		# into f(pk, *f_args, **f_kwargs)
+		f_wrapped = self._wrap_for_approx_fprime(f, f_args, f_kwargs, param.fixed)
 
+		# calculate numerical jacobian of f with respect to the varied
+		# paramters at param.v_opt
+		# todo: make param_holder class have v_values, v_cov, etc.
+		#       while being agnostic as to whether they correspond to
+		#       the result of an optimization routine.
+		f_jac = opt.approx_fprime(param.v_values, f_wrapped, 1.5e-8)
 		
+		# calculate sigma squared for f using J*sigma*J^t
+		f_err_sq = np.matmul(np.matmul(f_jac, param.v_cov), np.transpose(f_jac))
+
+		# return square root of sigma squared
+		return f_err_sq ** 0.5
+
+	def vector_num_error_p_only(self, ):
+		...
+
+	def scalar_num_error(self, ):
+		...
+
+	def vector_num_error(self, ):
+		...
 
 
 
 
 
-
-# def f(p, *args, **kwargs):
-
-# 	# p is an object with attributes for each parameter
-# 	# some may be fixed, some may be bound, some may be free
-# 	# parametrizer class takes care of order and all that jass
-
-# 	# *args and **kwargs contain other variables not being optimized for
-# 	# for instance, if including some sort of "x data" equivalient, it would
-# 	# need to go in args or kwargs.
-
-# 	# do stuff with p.attributes
-# 	p.gamma
-# 	p.rho_p
-# 	p.res_s_a
-# 	p.res_s_b
-# 	p.am241_n_bg
-# 	p.am241_n_p1
-# 	p.am241_n_p2
-
-# 	# return pulls = residuals / uncertainties
-# 	# since the least_squares method assumes equal (unit) weight on each
-# 	return pulls
-
-def ftest(p, xtest, ytest):
-
-	ftr_pos = ytest>0
-	x = xtest[ftr_pos]
-	y = ytest[ftr_pos]
-	yerr = np.sqrt(y)
-
-	ymodel = (x + p.r1) * (x + p.r2) * p.c
-	pulls = (y - ymodel) / yerr
-
-	return pulls
-
-
-
-
-par = parametrizer({"r1":1,"r2":1,"c":10})
-
-xtest  = np.linspace(0,20,500)
-ytest  = np.random.poisson((xtest+2)*(xtest+17)*25)
-f_args = [xtest, ytest]
-popt, order, result = par.minimize(ftest, f_args = f_args)
-
-print("\nresults")
-print(popt)
-print(order)
-print(result.x)
-print(result.cost)
-print(result.optimality)
-
-print("\nextra results")
-print(result.chi2)
-print(result.ndof)
-print(result.rchi2)
-print(np.sqrt(np.diag(result.xcov)))
-print(result.xcov)
-
-print("\ncalculating chi2, etc.")
-pulls = ftest(popt, *f_args)
-chi2 = (pulls**2).sum()
-ndof = np.count_nonzero(ytest) - result.x.size
-print("chi2: {:.2f}".format(chi2))
-print("ndof: {}".format(ndof))
-print("chi2/ndof: {:.4f}".format(chi2/ndof))
-
-
-sys.exit(0)
 
 
 if __name__ == "__main__":
 
-	print("testing classes")
+	print("testing fit routine")
 
-	res=300
+	def gaus_normalized(x, mu, sigma):
+		return ONE_OVER_ROOT_TAU * np.exp(-0.5 * ((x - mu) / sigma)**2) / sigma
 
-	xEdges = np.linspace(0,1,res+1)
-	xMids = 0.5*(xEdges[1:] + xEdges[:-1])
-	yEdges = np.linspace(0,10,res+1)
-	xSpec  = np.ones(res)
+	def ftest(p, x):
+		# print(p.a, p.b, p.r1, p.r2)
+		# return (p.a / (1 + (x - p.r1)**2)) + (p.b / (1 + (x - p.r2)**2))
+		return p.bg + p.n1 * gaus_normalized(x, p.mu1, p.sigma1) + p.n2 * gaus_normalized(x, p.mu2, p.sigma2)
 
-	bp = binned_projector(
-		lambda x,y,a,b:b/(1+(a*x - y)**2),
-		xEdges=xEdges,
-		yEdges=yEdges,
-		xSpec=xSpec,
+	def ftest_model(x, p):
+		ymodel = ftest(p,x)
+		return ymodel
+
+
+	# true parameter values and a holder instance for them
+	# vtrue = {"a":12,"b":18,"r1":4.25,"r2":13.50}
+	vtrue = {"bg":120, "n1":240, "mu1":9, "sigma1":2, "n2":810, "mu2":16, "sigma2":1}
+	ptrue = param_holder(vtrue, v_names = sorted(vtrue.keys()), f_names = [])
+
+	# unfair: guess starts at true values
+	par = parametrizer(vtrue)
+
+	# make test data
+	xtest  = np.linspace(0,20,500)
+	ytrue = ftest_model(xtest, ptrue)
+	ytest  = np.random.poisson(ytrue)
+
+	# remove zero bins
+	min_count = 1
+	err_sqrt  = 0
+	err_const = 0
+	ftr_nz = ytest >= min_count
+	xfit = xtest[ftr_nz]
+	yfit = ytest[ftr_nz]
+	
+	# fit
+	yerr = np.sqrt(yfit + err_sqrt) + err_const
+	popt = par.curve_fit(
+		xdata = xfit,
+		ydata = yfit,
+		yerr  = yerr,
+		f = ftest_model,
 	)
 
-	plt.step(
-		xMids,
-		bp(5,res),
-		'b',
-		where='mid',
-	)
+	pft = lambda fmt,ents,sep=' ':sep.join([fmt.format(_) for _ in ents])
+	fmt_par  = '{:>12.6f}'
+	fmt_name = '{:>12}'
+
+	print("\npopt")
+	print(popt)
+	print(popt.f_names)
+	print(pft(fmt_name, popt.v_names ))
+	print(pft(fmt_name, ptrue.v_values))
+	print(pft(fmt_par , popt.v_values))
+	print(pft(fmt_par , popt.v_err   ))
+
+	print("\ngoodness of fit")
+	print("chi2 / ndof = {:.1f} / {} = {:.4f}".format(popt.chi2, popt.ndof, popt.rchi2))
+
+	print("\ncalculating error on modeled counts")
+	ym_opt  = ftest(popt, xtest)
+	ym_err  = np.array([par.scalar_num_error_p_only(popt, ftest, f_args = [_]) for _ in xtest])
+	ym_pull = (ytrue - ym_opt) / ym_err
+
+	ychi2 = (ym_pull[ftr_nz] ** 2).sum()
+	yndof = ftr_nz.sum()
+	print("modeled counts vs. truth")
+	print("chi2 / ndof = {:.1f} / {} = {:.4f}".format(ychi2, yndof, ychi2/yndof))
+
+	print('\nplotting results')
+	plt.step(xtest, ytest, 'k', where='mid', label='data')
+	plt.fill_between(xtest, ytest, 0, color='k', alpha=0.1, step='mid')
+	plt.plot(xtest, ytrue, 'r-', label='truth')
+
+	plt.plot(xtest, ym_opt, 'g-', label='optimal model')
+	plt.fill_between(xtest, ym_opt-ym_err, ym_opt+ym_err, step=None, color='g', alpha=0.25)
+
+	plt.legend()
 	plt.show()
+
+	sys.exit(0)
