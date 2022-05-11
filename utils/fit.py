@@ -1,23 +1,12 @@
 """"""
 
 __author__ = "Brunel Odegard"
-__version__ = "0.0"
+__version__ = "0.1"
 
 
-import sys
-import os
 import math
-import argparse
-
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.lines  as lines
 import scipy.optimize    as opt
-
-import utils.fileio  as fileio
-import utils.display as display
-import utils.model   as model
-import utils.data    as data
 
 
 
@@ -445,6 +434,7 @@ class parametrizer(object):
 
 
 if __name__ == "__main__":
+	import matplotlib.pyplot as plt
 
 	print("testing fit routine")
 
@@ -526,5 +516,3 @@ if __name__ == "__main__":
 
 	plt.legend()
 	plt.show()
-
-	sys.exit(0)
