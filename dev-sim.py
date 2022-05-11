@@ -265,8 +265,9 @@ class routine(object):
 	# specify simulation data
 	dir_sim_data = '../xrd-analysis/data/root/simulation'
 	# sim_sources = ["Am241", "Ba133", "Cd109", "Co57", "Mn54", "Na22"]
-	sim_sources = ["Am241","Ba133","Cd109","Co57"]
-	# sim_sources = ["Am241","Cd109","Ba133"]
+	# sim_sources = ["Am241","Ba133","Cd109","Co57"]
+	sim_sources = ["Am241","Cd109","Ba133"]
+	# sim_sources = ["Am241"]
 	sim_file = "{}.root"
 	
 
@@ -477,6 +478,35 @@ class routine(object):
 
 			# make new branches to convert MeV to KeV for convenience
 			this_bm.bud(buds_mev_to_kev)
+
+			# # <TEMP>
+
+			# # test finding unique energies
+			# plt.subplots(nrows=1,ncols=len(self.ch_comp),sharex=True,sharey=True)
+			# for ich,ch in enumerate(self.ch_comp):
+			# 	this_e = positive(this_bm[self.sim_edep_kev.format(ch)])
+			# 	print("")
+			# 	print("deposited energies in channel {}".format(ch))
+			# 	counts = {}
+			# 	for e in this_e:
+			# 		key = round(e, 1)
+			# 		counts[key] = counts.get(key,0) + 1
+			# 	sp = sorted(counts.items(), key = lambda i:-i[1])
+			# 	for j in range(10):
+			# 		print("E (KeV): {:>8.3f} - count {:>8}".format(*sp[j]))
+
+			# 	plt.subplot(1,3,ich+1)
+			# 	plt.hist(this_e, histtype='step', bins=np.linspace(59.3,60,1000), label="ch {}".format(ch))
+			# 	plt.legend()
+			# 	plt.xlabel("E (KeV)")
+			# plt.suptitle("{}, simulated energy deposits (KeV)".format(src))
+			# plt.show()
+			# sys.exit(0)
+
+			# # test getting gamma ray track info
+
+			# # </TEMP>
+
 
 			# make transformers
 			for ch in self.ch_comp:
