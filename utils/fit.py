@@ -25,13 +25,15 @@ positive = lambda ar:ar[ar>0]
 
 
 
-def transform_y(f_x_y, t, dt_dyprime, *t_params):
+def transform_y(f_x_y, xf_and_dxf_dyprime):
 	"""Transform f_x_y(x,y) into f_x_yprime(x,yprime)
-	t is the inverse transformation: from yprime to y
-	y = t(yprime, *t_params)
-	dt_dyprime is its derivative with respect to yprime"""
-	def f_x_yprime(x,yprime,*par):
-		return f_x_y(x, t(yprime,*t_params), *par) * dt_dyprime(yprime,*t_params)
+	xf is the inverse transformation: from yprime to y
+	y = xf(yprime, *xf_params)
+	dxf_dyprime is its derivative with respect to yprime"""
+	def f_x_yprime(x,yprime,p):
+		xf, dxf_dyprime = xf_and_dxf_dyprime(yprime, p)
+		return f_x_y(x, xf, p) * dxf_dyprime
+	return f_x_yprime
 
 def gaus_spread(E_to_mu_sigma):
 	"""Returns a function of (E,A,*par) -> rho_A(E)
@@ -49,17 +51,18 @@ def gaus_spread(E_to_mu_sigma):
 
 	For example: mu = gamma*E, sigma = r*gamma*e
 	this would give linear A:E relation, and constant fractional width."""
-	def gaus(x_E,y_A,*par):
-		mu,sigma = E_to_mu_sigma(x_E,*par)
+	def gaus(x_E,y_A,p):
+		mu,sigma = E_to_mu_sigma(x_E,p)
 		return ONE_OVER_ROOT_TAU * np.exp(-0.5*((y_A - mu)/sigma)**2) / sigma
+	return gaus
 
-def transformed_gaus_spread(E_to_mu_sigma, t, dt_dAprime):
+def transformed_gaus_spread(E_to_mu_sigma, xf_and_dxf):
 	"""Conventienly compose and return a transformed gaussian distributor.
 	returns f(E, A') where f(E,A) is gaussian in A with mu,sigma functions of E
 	and t(A') = A
 	"""
 	f_E_A = gaus_spread(E_to_mu_sigma)
-	f_E_Aprime = transform_y(f_E_A, t, dt_dAprime)
+	f_E_Aprime = transform_y(f_E_A, xf_and_dxf)
 	return f_E_Aprime
 
 
@@ -144,8 +147,8 @@ class binned_projector(object):
 		self._func = func
 
 
-	def __call__(self, *parameters):
-		return (self._func(self._xMids, self._yMids, *parameters) * self._xSpec).sum(0)
+	def __call__(self, parameters):
+		return (self._func(self._xMids, self._yMids, parameters) * self._xSpec).sum(0)
 
 
 
@@ -316,8 +319,8 @@ class parametrizer(object):
 	def _get_p0_varied_list(self, names_varied):
 		return [self._guess.get(_,0.0) for _ in names_varied]
 
-	def get_p0(self, fixed=None):
-		...
+	def get_p0(self, fixed={}):
+		return self._compose_params(self._get_p0_varied_list(self._get_names_varied(fixed)),fixed,embellish=True)
 
 	def fit_independent_poisson(self):
 		...
