@@ -1397,6 +1397,10 @@ def main():
 			arrays |= {"ye_err_{}".format( k):v for k,v in ye[1].items()}
 			arrays |= {"ym_{}".format(     k):v for k,v in ym[0].items()}
 			arrays |= {"ym_err_{}".format( k):v for k,v in ym[1].items()}
+
+			# arrays |= rtn.spec_exp_src_nvs[ch]
+			for src in SOURCES:
+				arrays |= {"exp_{}_{}".format(k,src):rtn.exp_src[src][k] for k in rtn.exp_src[src].keys}
 			
 			file = "./data/spectra/ch{}.npz".format(ch)
 			np.savez(file, **arrays)
