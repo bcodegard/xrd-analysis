@@ -52,8 +52,10 @@ del PVE_KEV["Am241"]["18.1"] #
 del PVE_KEV["Am241"]["14.1"] # these have no associated energy deposits in scintillators
 del PVE_KEV["Co57" ]["14.1"] # they would cause issues for fitting if included.
 
-del PVE_KEV["Co57" ]["136.1"] # temporarily disable while area range
-del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
+# # remove these when not treating saturation region
+# del PVE_KEV["Co57" ]["136.1"] # temporarily disable while area range
+# del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
+
 
 # run numbers for experimental source spectra
 RUNS_EXP_SRC = {
@@ -118,13 +120,35 @@ LEAVES_LOAD_EXP_BG  = {LEAF_EXP_AREA_PVS.format(drs=DRS_ID, ch=_) for _ in CH_AL
 # comparisons between model and observation.
 
 # # extended - includes PMT saturation region
+# # DRS saturation in channels 1 2 3 begins after area (nVs) 280 310 310
+# # These values will be used as caps on upper limits to fit regions
+# # 
+# # command used to test DRS saturation:
+# # python3 fb-dev.py 4293 --fit A1 0 800 100 and 4293 --fit A1 0 800 100 --cut v1 . 949 and 4293 --fit A1 0 800 100 --cut v1 949
 # AREA_RANGE_NVS = {
 # 	"Am241":{1:[11, 90], 2:[11, 90], 3:[11, 90]},
-# 	"Ba133":{1:[11,600], 2:[11,600], 3:[11,600]},
+# 	"Ba133":{1:[11,280], 2:[11,310], 3:[11,310]},
 # 	"Cd109":{1:[11,130], 2:[11,130], 3:[11,130]},
 # 	"Co57" :{1:[11,200], 2:[11,200], 3:[11,200]},
 # 	# "Mn54" :[],
 # 	# "Na22" :[],
+# }
+
+# include PMT saturation but exclude poorly simulated low tails
+AREA_RANGE_NVS = {
+	"Am241":{1:[ 38, 90], 2:[ 38, 90], 3:[ 39, 90]},
+	"Ba133":{1:[ 11,280], 2:[ 11,310], 3:[ 11,310]},
+	"Cd109":{1:[ 11,130], 2:[ 11,130], 3:[ 11,130]},
+	"Co57" :{1:[106,200], 2:[107,200], 3:[112,200]},
+}
+
+# # include PMT saturation but exclude poorly simulated low tails
+# # also increase upper range of some all sources to DRS limit
+# AREA_RANGE_NVS = {
+# 	"Am241":{1:[ 38,280], 2:[ 38,310], 3:[ 39,310]},
+# 	"Ba133":{1:[ 11,280], 2:[ 11,310], 3:[ 11,310]},
+# 	"Cd109":{1:[ 11,280], 2:[ 11,310], 3:[ 11,310]},
+# 	"Co57" :{1:[106,280], 2:[107,310], 3:[112,310]},
 # }
 
 # # semi restrictive - excludes PMT saturation but includes Am241 low peak
@@ -135,13 +159,13 @@ LEAVES_LOAD_EXP_BG  = {LEAF_EXP_AREA_PVS.format(drs=DRS_ID, ch=_) for _ in CH_AL
 # 	"Co57" :{1:[11, 80], 2:[11, 80], 3:[11, 80]},
 # }
 
-# restrictive - excludes PMT saturation and AM241 low peak
-AREA_RANGE_NVS = {
-	"Am241":{1:[40, 80], 2:[40, 80], 3:[40, 80]},
-	"Ba133":{1:[11, 80], 2:[11, 80], 3:[11, 80]},
-	"Cd109":{1:[11, 42], 2:[11, 42], 3:[11, 42]},
-	"Co57" :{1:[11, 80], 2:[11, 80], 3:[11, 80]},
-}
+# # restrictive - excludes PMT saturation and AM241 low peak
+# AREA_RANGE_NVS = {
+# 	"Am241":{1:[40, 80], 2:[40, 80], 3:[40, 80]},
+# 	"Ba133":{1:[11, 80], 2:[11, 80], 3:[11, 80]},
+# 	"Cd109":{1:[11, 42], 2:[11, 42], 3:[11, 42]},
+# 	"Co57" :{1:[11, 80], 2:[11, 80], 3:[11, 80]},
+# }
 
 # resolution for projections (unitless; number of bins)
 RES_A = 200
@@ -280,62 +304,246 @@ SOURCE_PEAK_ENERGY_KEV = {
 # 	},
 # }
 
-# increased area res, better(?) stuff
+# # increased area res, better(?) stuff
+# PARAM_GUESS = {
+# 	1:{
+# 		"gamma"         : 1.097432, 
+# 		"res_s_a"       : 0.066664, 
+# 		"rho_p"         : 0.001989, 
+# 		"n_bg_Am241"    : 0.277073, 
+# 		"n_59.5_Am241"  : 0.006120, 
+# 		"n_bg_Cd109"    : 0.553708, 
+# 		"n_22.1_Cd109"  : 0.307077, 
+# 		"n_25.1_Cd109"  : 0.212869, 
+# 		"n_88.0_Cd109"  : 0.000000, 
+# 		"n_bg_Ba133"    : 0.193090, 
+# 		"n_31.1_Ba133"  : 0.110131, 
+# 		"n_356.0_Ba133" : 0.248205, 
+# 		"n_81.0_Ba133"  : 0.017168, 
+# 		"n_bg_Co57"     : 0.399963, 
+# 		"n_122.1_Co57"  : 0.063805, 
+# 	},
+# 	2:{
+# 		"gamma"         : 1.121880, 
+# 		"res_s_a"       : 0.056019, 
+# 		"rho_p"         : 0.003989, 
+# 		"n_bg_Am241"    : 0.269309, 
+# 		"n_59.5_Am241"  : 0.001301, 
+# 		"n_bg_Cd109"    : 0.295428, 
+# 		"n_22.1_Cd109"  : 0.056627, 
+# 		"n_25.1_Cd109"  : 0.053310, 
+# 		"n_88.0_Cd109"  : 0.071958, 
+# 		"n_bg_Ba133"    : 0.125694, 
+# 		"n_31.1_Ba133"  : 0.026863, 
+# 		"n_356.0_Ba133" : 0.078880, 
+# 		"n_81.0_Ba133"  : 0.003011, 
+# 		"n_bg_Co57"     : 0.228454, 
+# 		"n_122.1_Co57"  : 0.025074, 
+# 	},
+# 	3:{
+# 		"gamma"         : 1.179257, 
+# 		"res_s_a"       : 0.070185, 
+# 		"rho_p"         : 0.003854, 
+# 		"n_bg_Am241"    : 0.363776, 
+# 		"n_59.5_Am241"  : 0.000616, 
+# 		"n_bg_Cd109"    : 0.526177, 
+# 		"n_22.1_Cd109"  : 0.028869, 
+# 		"n_25.1_Cd109"  : 0.024996, 
+# 		"n_88.0_Cd109"  : 0.003722, 
+# 		"n_bg_Ba133"    : 0.171747, 
+# 		"n_31.1_Ba133"  : 0.012543, 
+# 		"n_356.0_Ba133" : 0.030650, 
+# 		"n_81.0_Ba133"  : 0.001752, 
+# 		"n_bg_Co57"     : 0.311807, 
+# 		"n_122.1_Co57"  : 0.009490, 
+# 	}
+# }
+
+# # expanded range, no A*->A xf (well, trivial one)
+# PARAM_GUESS = {
+# 	1:{
+# 		"gamma"         : 1.053073,
+# 		"res_s_a"       : 0.051010,
+# 		"rho_p"         : 0.003211,
+# 		"n_bg_Am241"    : 0.451030,
+# 		"n_59.5_Am241"  : 0.010363,
+# 		"n_bg_Cd109"    : 0.470105,
+# 		"n_22.1_Cd109"  : 0.656314,
+# 		"n_25.1_Cd109"  : 1.824759,
+# 		"n_88.0_Cd109"  : 0.093391,
+# 		"n_bg_Ba133"    : 0.422128,
+# 		"n_31.1_Ba133"  : 0.403128,
+# 		"n_356.0_Ba133" : 0.056121,
+# 		"n_81.0_Ba133"  : 0.102493,
+# 		"n_bg_Co57"     : 0.491674,
+# 		"n_122.1_Co57"  : 0.035844,
+# 	},
+# 	2:{
+# 		"gamma"         : 1.066205,
+# 		"res_s_a"       : 0.041034,
+# 		"rho_p"         : 0.006049,
+# 		"n_bg_Am241"    : 0.420309,
+# 		"n_59.5_Am241"  : 0.002195,
+# 		"n_bg_Cd109"    : 0.496616,
+# 		"n_22.1_Cd109"  : 0.090365,
+# 		"n_25.1_Cd109"  : 0.465070,
+# 		"n_88.0_Cd109"  : 0.023194,
+# 		"n_bg_Ba133"    : 0.529970,
+# 		"n_31.1_Ba133"  : 0.110079,
+# 		"n_356.0_Ba133" : 0.014181,
+# 		"n_81.0_Ba133"  : 0.030378,
+# 		"n_bg_Co57"     : 0.532650,
+# 		"n_122.1_Co57"  : 0.009522,
+# 	},
+# 	3:{
+# 		"gamma"         : 1.123413,
+# 		"res_s_a"       : 0.035497,
+# 		"rho_p"         : 0.006943,
+# 		"n_bg_Am241"    : 0.489645,
+# 		"n_59.5_Am241"  : 0.001063,
+# 		"n_bg_Cd109"    : 0.545301,
+# 		"n_22.1_Cd109"  : 0.051828,
+# 		"n_25.1_Cd109"  : 0.220742,
+# 		"n_88.0_Cd109"  : 0.010089,
+# 		"n_bg_Ba133"    : 0.531952,
+# 		"n_31.1_Ba133"  : 0.051887,
+# 		"n_356.0_Ba133" : 0.006445,
+# 		"n_81.0_Ba133"  : 0.014347,
+# 		"n_bg_Co57"     : 0.585637,
+# 		"n_122.1_Co57"  : 0.004380,
+# 	}
+# }
+
+# # quadratic area xf results; reduced ranges
+# PARAM_GUESS = {
+# 	1:{
+# 		"gamma"         : 1.141315,
+# 		"res_s_a"       : 0.067588,
+# 		"rho_p"         : 0.002640,
+# 		"xf_a"          : 0.152923,
+# 		"xf_c"          : 0.000809,
+# 		"n_bg_Am241"    : 0.336080,
+# 		"n_59.5_Am241"  : 0.007742,
+# 		"n_bg_Cd109"    : 0.458261,
+# 		"n_22.1_Cd109"  : 1.349762,
+# 		"n_25.1_Cd109"  : 0.497744,
+# 		"n_88.0_Cd109"  : 0.096804,
+# 		"n_bg_Ba133"    : 0.368054,
+# 		"n_31.1_Ba133"  : 0.452639,
+# 		"n_356.0_Ba133" : 0.070551,
+# 		"n_81.0_Ba133"  : 0.107139,
+# 		"n_bg_Co57"     : 0.327316,
+# 		"n_122.1_Co57"  : 0.019040,
+# 	},
+# 	2:{
+# 		"gamma"         : 1.164358,
+# 		"res_s_a"       : 0.062648,
+# 		"rho_p"         : 0.004689,
+# 		"xf_a"          : 0.000000,
+# 		"xf_c"          : 0.000835,
+# 		"n_bg_Am241"    : 0.314902,
+# 		"n_59.5_Am241"  : 0.001658,
+# 		"n_bg_Cd109"    : 0.489223,
+# 		"n_22.1_Cd109"  : 0.262287,
+# 		"n_25.1_Cd109"  : 0.116920,
+# 		"n_88.0_Cd109"  : 0.023575,
+# 		"n_bg_Ba133"    : 0.554149,
+# 		"n_31.1_Ba133"  : 0.125029,
+# 		"n_356.0_Ba133" : 0.008539,
+# 		"n_81.0_Ba133"  : 0.030196,
+# 		"n_bg_Co57"     : 0.326320,
+# 		"n_122.1_Co57"  : 0.004923,
+# 	},
+# 	3:{
+# 		"gamma"         : 1.225017,
+# 		"res_s_a"       : 0.059103,
+# 		"rho_p"         : 0.005742,
+# 		"xf_a"          : 0.000000,
+# 		"xf_c"          : 0.000783,
+# 		"n_bg_Am241"    : 0.311837,
+# 		"n_59.5_Am241"  : 0.000797,
+# 		"n_bg_Cd109"    : 0.534441,
+# 		"n_22.1_Cd109"  : 0.135829,
+# 		"n_25.1_Cd109"  : 0.046766,
+# 		"n_88.0_Cd109"  : 0.010415,
+# 		"n_bg_Ba133"    : 0.485826,
+# 		"n_31.1_Ba133"  : 0.057152,
+# 		"n_356.0_Ba133" : 0.007017,
+# 		"n_81.0_Ba133"  : 0.014886,
+# 		"n_bg_Co57"     : 0.354266,
+# 		"n_122.1_Co57"  : 0.002151,
+# 	}
+# }
+
+# cubic, params scaled to 50 nVs, include the two HE peaks
 PARAM_GUESS = {
 	1:{
-		"gamma"         : 1.097432, 
-		"res_s_a"       : 0.066664, 
-		"rho_p"         : 0.001989, 
-		"n_bg_Am241"    : 0.277073, 
-		"n_59.5_Am241"  : 0.006120, 
-		"n_bg_Cd109"    : 0.553708, 
-		"n_22.1_Cd109"  : 0.307077, 
-		"n_25.1_Cd109"  : 0.212869, 
-		"n_88.0_Cd109"  : 0.000000, 
-		"n_bg_Ba133"    : 0.193090, 
-		"n_31.1_Ba133"  : 0.110131, 
-		"n_356.0_Ba133" : 0.248205, 
-		"n_81.0_Ba133"  : 0.017168, 
-		"n_bg_Co57"     : 0.399963, 
-		"n_122.1_Co57"  : 0.063805, 
+		"gamma"         : 1.135e+00,
+		"res_s_a"       : 5.726e-02,
+		"rho_p"         : 3.433e-03,
+		"xf_a"          : 8.575e-17,
+		"xf_c"          : 3.792e-02,
+		"xf_d"          : 6.208e-04,
+		"n_bg_Am241"    : 3.505e-01,
+		"n_59.5_Am241"  : 7.609e-03,
+		"n_bg_Cd109"    : 4.662e-01,
+		"n_22.1_Cd109"  : 1.376e+00,
+		"n_25.1_Cd109"  : 4.460e-01,
+		"n_88.0_Cd109"  : 9.376e-02,
+		"n_bg_Ba133"    : 4.142e-01,
+		"n_303.2_Ba133" : 2.790e-02,
+		"n_31.1_Ba133"  : 4.512e-01,
+		"n_356.0_Ba133" : 3.967e-02,
+		"n_81.0_Ba133"  : 1.030e-01,
+		"n_bg_Co57"     : 3.104e-01,
+		"n_122.1_Co57"  : 1.763e-02,
+		"n_136.1_Co57"  : 1.111e-02,
 	},
 	2:{
-		"gamma"         : 1.121880, 
-		"res_s_a"       : 0.056019, 
-		"rho_p"         : 0.003989, 
-		"n_bg_Am241"    : 0.269309, 
-		"n_59.5_Am241"  : 0.001301, 
-		"n_bg_Cd109"    : 0.295428, 
-		"n_22.1_Cd109"  : 0.056627, 
-		"n_25.1_Cd109"  : 0.053310, 
-		"n_88.0_Cd109"  : 0.071958, 
-		"n_bg_Ba133"    : 0.125694, 
-		"n_31.1_Ba133"  : 0.026863, 
-		"n_356.0_Ba133" : 0.078880, 
-		"n_81.0_Ba133"  : 0.003011, 
-		"n_bg_Co57"     : 0.228454, 
-		"n_122.1_Co57"  : 0.025074, 
+		"gamma"         : 1.169e+00,
+		"res_s_a"       : 4.915e-02,
+		"rho_p"         : 5.708e-03,
+		"xf_a"          : 2.455e-16,
+		"xf_c"          : 4.523e-02,
+		"xf_d"          : 7.591e-14,
+		"n_bg_Am241"    : 3.288e-01,
+		"n_59.5_Am241"  : 1.628e-03,
+		"n_bg_Cd109"    : 4.983e-01,
+		"n_22.1_Cd109"  : 2.708e-01,
+		"n_25.1_Cd109"  : 9.964e-02,
+		"n_88.0_Cd109"  : 2.282e-02,
+		"n_bg_Ba133"    : 5.630e-01,
+		"n_303.2_Ba133" : 7.617e-03,
+		"n_31.1_Ba133"  : 1.249e-01,
+		"n_356.0_Ba133" : 4.324e-03,
+		"n_81.0_Ba133"  : 2.991e-02,
+		"n_bg_Co57"     : 3.096e-01,
+		"n_122.1_Co57"  : 4.518e-03,
+		"n_136.1_Co57"  : 3.304e-03,
 	},
 	3:{
-		"gamma"         : 1.179257, 
-		"res_s_a"       : 0.070185, 
-		"rho_p"         : 0.003854, 
-		"n_bg_Am241"    : 0.363776, 
-		"n_59.5_Am241"  : 0.000616, 
-		"n_bg_Cd109"    : 0.526177, 
-		"n_22.1_Cd109"  : 0.028869, 
-		"n_25.1_Cd109"  : 0.024996, 
-		"n_88.0_Cd109"  : 0.003722, 
-		"n_bg_Ba133"    : 0.171747, 
-		"n_31.1_Ba133"  : 0.012543, 
-		"n_356.0_Ba133" : 0.030650, 
-		"n_81.0_Ba133"  : 0.001752, 
-		"n_bg_Co57"     : 0.311807, 
-		"n_122.1_Co57"  : 0.009490, 
+		"gamma"         : 1.229e+00,
+		"res_s_a"       : 4.401e-02,
+		"rho_p"         : 6.749e-03,
+		"xf_a"          : 1.336e-14,
+		"xf_c"          : 4.207e-02,
+		"xf_d"          : 2.325e-16,
+		"n_bg_Am241"    : 3.381e-01,
+		"n_59.5_Am241"  : 7.783e-04,
+		"n_bg_Cd109"    : 5.471e-01,
+		"n_22.1_Cd109"  : 1.391e-01,
+		"n_25.1_Cd109"  : 3.993e-02,
+		"n_88.0_Cd109"  : 1.001e-02,
+		"n_bg_Ba133"    : 5.312e-01,
+		"n_303.2_Ba133" : 1.873e-03,
+		"n_31.1_Ba133"  : 5.697e-02,
+		"n_356.0_Ba133" : 4.330e-03,
+		"n_81.0_Ba133"  : 1.440e-02,
+		"n_bg_Co57"     : 3.295e-01,
+		"n_122.1_Co57"  : 1.955e-03,
+		"n_136.1_Co57"  : 1.562e-03,
 	}
 }
-
-
 
 
 # convenience and utility functions
@@ -416,7 +624,7 @@ class routine(object):
 	def __init__(self):
 		self.load_data()
 		self.prepare_data()
-		self.setup_model()
+		# self.setup_model()
 
 
 	@fn_indent
@@ -718,11 +926,25 @@ class routine(object):
 				mids   = self.mids_a_nvs[ch][src]
 				edges  = self.edges_a_nvs[ch][src]
 				widths = edges[1:] - edges[:-1]
-				plt.fill_between(mids, self.spec_exp_src_nvs[ch][src] / widths, color='k', step='mid', alpha=0.1)#facecolor=(1,0.4,0.4,0.4), edgecolor=(1,0.4,0.4,1))
+				plt.fill_between(
+					mids,
+					(self.spec_exp_src_nvs[ch][src] + self.spec_exp_src_nvs_err[ch][src]) / widths,
+					(self.spec_exp_src_nvs[ch][src] - self.spec_exp_src_nvs_err[ch][src]) / widths,
+					color='k',
+					step='mid',
+					alpha=0.2
+				)
 				plt.step(mids, self.spec_exp_src_nvs[ch][src] / widths, color='k', where='mid')
 				
-				plt.fill_between(mids, self.spec_exp_bg_nvs[ch][src] / widths, color='g', step='mid', alpha=0.2)#facecolor=(1,0.4,0.4,0.4), edgecolor=(1,0.4,0.4,1))
-				plt.step(mids, self.spec_exp_bg_nvs_err[ch][src] / widths, color='g', where='mid')
+				plt.fill_between(
+					mids,
+					(self.spec_exp_bg_nvs[ch][src] + self.spec_exp_bg_nvs_err[ch][src]) / widths,
+					(self.spec_exp_bg_nvs[ch][src] - self.spec_exp_bg_nvs_err[ch][src]) / widths,
+					color='g',
+					step='mid',
+					alpha=0.4
+				)
+				plt.step(mids, self.spec_exp_bg_nvs[ch][src] / widths, color='g', where='mid')
 				
 				plt.xlabel('Area (nVs)')
 				plt.title("observed area spectrum, {}".format(src))
@@ -823,7 +1045,7 @@ class routine(object):
 
 
 	@fn_indent
-	def setup_model(self):
+	def setup_model(self, ch=None):
 		"""initialize functions and objects for performing model calculation"""
 
 
@@ -839,9 +1061,10 @@ class routine(object):
 		# todo: automatically get set of desired parameters
 
 		def E_to_res(E, pm):
-			# res_s = pm.res_s_a + (pm.res_s_b * 50) / E
+			# res_s = pm.res_s_a # constant res_s
+			# res_s = pm.res_s_a + (pm.res_s_b * 50) / E 
+			res_s = pm.res_s_a - (pm.res_s_b / 50) * E
 			# res_s = pm.res_s_a + (pm.res_s_b) * np.sqrt(50/E)
-			res_s = pm.res_s_a # constant res_s
 			res_p_squared = (pm.rho_p * 50) / E
 			return np.sqrt(res_s**2 + res_p_squared)
 		self.E_to_res = E_to_res
@@ -855,25 +1078,55 @@ class routine(object):
 		# parameters for E -> mu, sigma
 		self.parametrizer.add_parameters({
 			"gamma"  : 1.195, 
-			"rho_p"  : 0.003,
-			"res_s_a": 0.076,
-			# "res_s_b": 0.001,
+			"rho_p"  : 0.007,
+			"res_s_a": 0.044,
+			"res_s_b": 0.000,
 		})
 
-		# # parameters for A <-> A*
-		# self.parametrizer.add_parameters({
-		# 	"sat_xf_a": 1.0,
-		# 	"sat_xf_b": 0.0,
-		# })
 
-		# trivial transformation for testing
-		def xf_and_dxf(A, pm):
-			return A, 1
+		# # trivial transformation for testing
+		# def xf_and_dxf(A, pm):
+		# 	return A, 1
+
+		if ch == 1:
+			# cubic polynomial a + A + cA^2 + dA^3
+			def xf_and_dxf(A, pm):
+				# scale params to 50 nVs
+				# a = pm.xf_a * 50
+				c = pm.xf_c / 50
+				d = pm.xf_d / (50**2)
+				A2 = A**2
+				A3 = A**3
+				# return a + A + c*A2 + d*A3, 1 + 2*A*c + 3*A2*d
+				return A + c*A2 + d*A3, 1 + 2*A*c + 3*A2*d
+			self.parametrizer.add_parameters({
+				# "xf_a": 0.0,
+				# "xf_b":0.0,
+				"xf_c": 0.0,
+				"xf_d": 0.0,
+			})
+
+		else:
+			# quadratic with just A + cA^2
+			def xf_and_dxf(A, pm):
+				c = pm.xf_c / 50
+				return A + c*(A**2), 1 + 2*A*c
+			self.parametrizer.add_parameters({
+				# "xf_a": 0.0,
+				# "xf_b":0.0,
+				"xf_c": 0.0,
+				# "xf_d": 0.0,
+			})
+
 		self.xf_and_dxf = xf_and_dxf
 
-		# self.parametrizer.add_parameters({
-		# 	"":	
-		# })
+		# # quadratic polynomial (a?) + A + c A**2
+		# def xf_and_dxf(A, pm):
+		# 	a = pm.xf_a * 50
+		# 	c = pm.xf_c / 50
+		# 	return a + A + (A**2)*c, 1 + 2*A*c
+
+
 
 		# make binned projectors for each piece of each source spectrum
 		# using the point spread function as above
@@ -884,7 +1137,8 @@ class routine(object):
 		# 
 		# {ch:{src:{Epv:projector}}}
 		self.projectors = {}
-		for ch in CH_COMP:
+		ch_setup = CH_COMP if ch is None else [ch]
+		for ch in ch_setup:
 			self.projectors[ch] = {}
 			for src in SOURCES:
 				self.projectors[ch][src] = {}
@@ -917,8 +1171,9 @@ class routine(object):
 
 		# parameters for background contribution
 		for src in SOURCES:
-			self.parametrizer.add_parameters({"n_bg_{}".format(src):4000.0})
-			self.parametrizer.add_parameters({"n_{}_{}".format(_,src):10000.0 for _ in PVE_KEV[src].keys()})
+			self.parametrizer.add_parameters({"n_bg_{}".format(src):0.0})
+			self.parametrizer.add_parameters({"n_{}_{}".format(_,src):0.0 for _ in PVE_KEV[src].keys()})
+
 
 	def get_xdata_flat(self, ch):
 		pieces = []
@@ -1034,7 +1289,7 @@ class routine(object):
 			p0     = PARAM_GUESS.get(ch, None),
 		)
 		for ip,p in enumerate(pm_opt.v_names):
-			print("{:>2} {:>16} = {:>16.6f} \xb1 {:>16.6f}".format(ip, p, pm_opt.v_opt[ip], pm_opt.v_err[ip]))
+			print("{:>2} {:>16} = {:>10.3e} \xb1 {:>10.6e}".format(ip, p, pm_opt.v_opt[ip], pm_opt.v_err[ip]))
 		
 		self.show_evaluate(pm_opt, ch, xdata=xdata_flat, incl_sep=True)
 
@@ -1049,8 +1304,17 @@ def main():
 	rtn = routine()
 
 	# rtn.show_spectra()
+	# sys.exit(0)
+
 	# rtn.show_evaluate_p0()
-	for ch in CH_COMP:
+	# sys.exit(0)
+
+	ch_fit = CH_COMP
+	# ch_fit = [1]
+	# ch_fit = [2,3]
+
+	for ch in ch_fit:
+		rtn.setup_model(ch)
 		rtn.optimize(ch)
 
 if __name__ == "__main__":

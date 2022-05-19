@@ -434,6 +434,7 @@ class parametrizer(object):
 			y_opt_err = self.vector_num_error_p_only(param_result, f, xdata, f_args, f_kwargs)
 		else:
 			y_opt_err = self.vector_num_error_p_xdiag(param_result, f, xdata, xerr, f_args, f_kwargs)
+		y_opt_err = y_opt_err[f_valid]
 
 		y_resid = ydata - y_opt
 		y_resid_err = np.sqrt(yerr**2 + y_opt_err**2)
