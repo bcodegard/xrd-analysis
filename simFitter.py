@@ -53,8 +53,8 @@ del PVE_KEV["Am241"]["14.1"] # these have no associated energy deposits in scint
 del PVE_KEV["Co57" ]["14.1"] # they would cause issues for fitting if included.
 
 # # remove these when not treating saturation region
-# del PVE_KEV["Co57" ]["136.1"] # temporarily disable while area range
-# del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
+del PVE_KEV["Co57" ]["136.1"] # temporarily disable while area range
+del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
 
 
 # run numbers for experimental source spectra
@@ -134,12 +134,20 @@ LEAVES_LOAD_EXP_BG  = {LEAF_EXP_AREA_PVS.format(drs=DRS_ID, ch=_) for _ in CH_AL
 # 	# "Na22" :[],
 # }
 
-# include PMT saturation but exclude poorly simulated low tails
+# # include PMT saturation but exclude poorly simulated low tails
+# AREA_RANGE_NVS = {
+# 	"Am241":{1:[ 38, 90], 2:[ 38, 90], 3:[ 39, 90]},
+# 	"Ba133":{1:[ 11,280], 2:[ 11,310], 3:[ 11,310]},
+# 	"Cd109":{1:[ 11,130], 2:[ 11,130], 3:[ 11,130]},
+# 	"Co57" :{1:[106,200], 2:[107,200], 3:[112,200]},
+# }
+
+# idential ranges for all sources; include PMT saturation
 AREA_RANGE_NVS = {
-	"Am241":{1:[ 38, 90], 2:[ 38, 90], 3:[ 39, 90]},
-	"Ba133":{1:[ 11,280], 2:[ 11,310], 3:[ 11,310]},
-	"Cd109":{1:[ 11,130], 2:[ 11,130], 3:[ 11,130]},
-	"Co57" :{1:[106,200], 2:[107,200], 3:[112,200]},
+	"Am241":{1:[12,150], 2:[12,150], 3:[12,165]},
+	"Ba133":{1:[12,150], 2:[12,150], 3:[12,165]},
+	"Cd109":{1:[12,150], 2:[12,150], 3:[12,165]},
+	"Co57" :{1:[12,150], 2:[12,150], 3:[12,165]},
 }
 
 # # include PMT saturation but exclude poorly simulated low tails
@@ -1278,11 +1286,14 @@ class routine(object):
 		bounds = {_:[0,np.inf] for _ in pm0.v_names}
 		# del bounds["res_s_b"]
 
+		ydata_flat = self.spec_exp_src_nvs_flat[ch]
+		yerr_flat  = self.spec_exp_src_nvs_err_flat[ch]
+
 		pm_opt, ym_opt, ym_err = self.parametrizer.curve_fit(
 			xdata  = xdata_flat,
 			xerr   = xerr_flat,
-			ydata  = self.spec_exp_src_nvs_flat[ch],
-			yerr   = self.spec_exp_src_nvs_err_flat[ch],
+			ydata  = ydata_flat,
+			yerr   = yerr_flat,
 			f      = self.evaluate,
 			f_args = [ch],
 			bounds = bounds,
@@ -1292,6 +1303,24 @@ class routine(object):
 			print("{:>2} {:>16} = {:>10.3e} \xb1 {:>10.6e}".format(ip, p, pm_opt.v_opt[ip], pm_opt.v_err[ip]))
 		
 		self.show_evaluate(pm_opt, ch, xdata=xdata_flat, incl_sep=True)
+
+		# x data (shape != shape of ydata)
+		# x      = xdata_flat
+		# x_err  = xerr_flat 
+
+		# area bins
+		ar_e = self.edges_a_nvs[ch]
+		ar_m = self.mids_a_nvs[ch]
+		
+		# experimental y data
+		ye     = self.unflatten_sources(ydata_flat, ch=ch)
+		ye_err = self.unflatten_sources(yerr_flat , ch=ch)
+
+		# modeled y data
+		ym     = self.unflatten_sources(ym_opt, ch=ch)
+		ym_err = self.unflatten_sources(ym_err, ch=ch)
+
+		return pm_opt, (ar_e, ar_m), (ye,ye_err), (ym,ym_err)
 
 
 
@@ -1315,7 +1344,64 @@ def main():
 
 	for ch in ch_fit:
 		rtn.setup_model(ch)
-		rtn.optimize(ch)
+		pm_opt, area, ye, ym = rtn.optimize(ch)
+
+		show_spectra = False
+		if show_spectra:
+			for src in SOURCES:
+
+				plt.fill_between(
+					x  = area[1][src],
+					y1 = (ye[0][src]+ye[1][src]),
+					y2 = (ye[0][src]-ye[1][src]),
+					step='mid',
+					alpha=0.3,
+					color='k',
+				)
+				plt.fill_between(
+					x  = area[1][src],
+					y1 = (ym[0][src]+ym[1][src]),
+					y2 = (ym[0][src]-ym[1][src]),
+					step='mid',
+					alpha=0.3,
+					color='b',
+				)
+
+				plt.step(
+					area[1][src],
+					ye[0][src],
+					color='k',
+					where='mid',
+					label='experiment'
+				)
+				plt.step(
+					area[1][src],
+					ym[0][src],
+					color='b',
+					where='mid',
+					label='model'
+				)
+
+				plt.title(src)
+				plt.legend()
+				plt.xlabel('area (nVs)')
+				plt.show()
+
+		save_spectra = True
+		if save_spectra:
+
+			arrays = {}
+			arrays |= {"a_edges_{}".format(k):v for k,v in area[0].items()}
+			arrays |= {"a_mids_{}".format( k):v for k,v in area[1].items()}
+			arrays |= {"ye_{}".format(     k):v for k,v in ye[0].items()}
+			arrays |= {"ye_err_{}".format( k):v for k,v in ye[1].items()}
+			arrays |= {"ym_{}".format(     k):v for k,v in ym[0].items()}
+			arrays |= {"ym_err_{}".format( k):v for k,v in ym[1].items()}
+			
+			file = "./data/spectra/ch{}.npz".format(ch)
+			np.savez(file, **arrays)
+
+
 
 if __name__ == "__main__":
 	# todo: argparse for control
