@@ -300,7 +300,7 @@ class routine(object):
 		"Co57" :{1:[11000,200000], 2:[11000,200000], 3:[11000,200000]},
 		"Mn54" :[],
 		"Na22" :[],
-	}	
+	}
 
 	# source peak energies for plotting vlines
 	peak_e = {

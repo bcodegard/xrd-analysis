@@ -60,6 +60,15 @@ def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimi
 def edges_lin(xmin, xmax, nbins):
 	return np.linspace(xmin, xmax, nbins+1)
 
+def edges_equal_count(nbins, xdata, xmin, xmax):
+	xdata = xdata[np.logical_and(xdata>xmin, xdata<xmax)]
+	count = xdata.size
+	return np.interp(
+		np.linspace(0,count,nbins+1),
+		np.arange(count),
+		np.sort(xdata),
+	)
+
 def edges_log(xmin, xmax, nbins):
 	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
 

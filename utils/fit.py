@@ -51,8 +51,8 @@ def gaus_spread(E_to_mu_sigma):
 
 	For example: mu = gamma*E, sigma = r*gamma*e
 	this would give linear A:E relation, and constant fractional width."""
-	def gaus(x_E,y_A,p):
-		mu,sigma = E_to_mu_sigma(x_E,p)
+	def gaus(x_E,y_A,pm):
+		mu,sigma = E_to_mu_sigma(x_E,pm)
 		return ONE_OVER_ROOT_TAU * np.exp(-0.5*((y_A - mu)/sigma)**2) / sigma
 	return gaus
 
@@ -89,15 +89,17 @@ class binned_projector(object):
 	# xSpec[i,j] = weight for bin xi
 	xSpec = None
 
-	def __init__(self, func, xMids=None, yMids=None, xSpec=None, xEdges=None, yEdges=None, xData=None):
+	def __init__(self, func, xMids=None, xWidth=None, yMids=None, yWidth=None, xSpec=None, xEdges=None, yEdges=None, xData=None):
 		
 		# function f(x,y,*p)
 		self._func = func
 
 		# don't copy, so that if multiple instances of the class are
 		# needed, you can pass the same arrays to each and not duplicate
-		self._xMids = xMids
-		self._yMids = yMids
+		self._xMids  = xMids
+		self._xWidth = xWidth
+		self._yMids  = yMids
+		self._yWidth = yWidth
 		self._xSpec = xSpec
 
 		# use the rest of the kwargs to generate any that are None
@@ -111,11 +113,13 @@ class binned_projector(object):
 		# generate 1d xMids if it's None
 		if self._xMids is None:
 			self._xMids = 0.5*(xEdges[1:]+xEdges[:-1])
+			self._xWidth = xEdges[1:] - xEdges[:-1]
 		self._xRes = self._xMids.shape[0]
 
 		# generate 1d yMids if it's None
 		if self._yMids is None:
 			self._yMids = 0.5*(yEdges[1:]+yEdges[:-1])
+			self._yWidth = yEdges[1:] - yEdges[:-1]
 		self._yRes = self._yMids.shape[0] if self._yMids.ndim == 1 else self._yMids.shape[1]
 
 		# broadcast yMids to 2d if it's 1d
@@ -132,6 +136,15 @@ class binned_projector(object):
 				[self._xRes,self._yRes],
 			)
 
+		# broadcast xWidth to 2d if it's 1d
+		if self._xWidth.ndim == 1:
+			self._xWidth = self._xWidth.reshape([self._xRes,1])
+		# broadcast yWidth to 2d if it's 1d
+		if self._yWidth.ndim == 1:
+			self._yWidth = self._yWidth.reshape([1, self._yRes])
+
+		self._xWidth *= self._xWidth.shape[0] / np.sum(self._xWidth[:,0])
+
 		# calculate 1d xSpec from counts if it's None
 		if xSpec is None:
 			self._xSpec, _ = np.histogram(xData, xEdges)
@@ -147,13 +160,18 @@ class binned_projector(object):
 		self._func = func
 
 
-	def __call__(self, parameters):
-		return (self._func(self._xMids, self._yMids, parameters) * self._xSpec).sum(0)
+	def __call__(self, parameters, xSpec=None):
+		if xSpec is None:
+			xSpec=self._xSpec
+		if xSpec.ndim == 1:
+			xSpec = xSpec.reshape([self._xRes,1])
+		return (self._yWidth * self._func(self._xMids, self._yMids, parameters) * (xSpec)).sum(0)
+		# return (self._func(self._xMids, self._yMids, parameters) * xSpec).sum(0)
 
 
 
 
-class param_holder(object):
+class param_manager(object):
 	"""basically just an attribute holder"""
 
 	RESERVED_ATTRIBUTES = [
@@ -187,6 +205,10 @@ class param_holder(object):
 		"ndof"  ,
 		"rchi2" ,
 	]
+
+	chi2=None
+	ndof=None
+	rchi2=None
 	
 	def __init__(self, params, fixed=None, v_names=None, f_names=None):
 		self.setup(params, fixed, v_names, f_names)
@@ -215,9 +237,21 @@ class param_holder(object):
 	def set_param_attr(self,key,value):
 		"""deny parameter names found in RESERVED_ATTRIBUTES"""
 		if (key in self.RESERVED_ATTRIBUTES) or (key.startswith("_")):
-			raise ValueError("illegal parameter name {}".format(key))
+			raise ValueError("{} is not a parameter".format(key))
 		else:
 			self.__setattr__(key,value)
+
+	def get_param_attr(self,key):
+		if (key in self.RESERVED_ATTRIBUTES) or (key.startswith("_")):
+			raise ValueError("{} is not a parameter".format(key))
+		else:
+			return self.__getattribute__(key)
+
+	def __getitem__(self,key):
+		return self.get_param_attr(key)
+
+	def __setitem__(self,key,value):
+		return self.set_param_attr(key,value)
 
 	def set_varied(self, v_values, v_cov=None):
 		"""Set the values and optionally covariance of varied parameters"""
@@ -289,9 +323,9 @@ class parametrizer(object):
 				k += 1
 			params[name] = value
 		if embellish:
-			return param_holder(params, fixed, self._get_names_varied(fixed), self._get_names_fixed(fixed))
+			return param_manager(params, fixed, self._get_names_varied(fixed), self._get_names_fixed(fixed))
 		else:
-			return param_holder(params)
+			return param_manager(params)
 
 	def _get_names_varied(self,fixed):
 		"""get list of names that are not in fixed"""
@@ -301,13 +335,13 @@ class parametrizer(object):
 		"""get list of names that are in fixed"""
 		return [_ for _ in self._names if _ in fixed]		
 
-	def _wrap_for_curve_fit(self, f, f_args=[], f_kwargs={}, fixed={}):
+	def _wrap_for_curve_fit(self, f, f_valid, f_args=[], f_kwargs={}, fixed={}):
 		"""wrap function f(p, *args, **kwargs) into form where the
 		parameters are specified sequentially, for use in optimization."""
 		def wrapped(xdata, *pk):
 			# compose object with attributes from pk
 			p = self._compose_params(pk, fixed)
-			return f(xdata, p, *f_args, **f_kwargs)
+			return f(xdata, p, *f_args, **f_kwargs)[f_valid]
 		return wrapped
 
 	def _wrap_for_approx_fprime(self, f, f_args=[], f_kwargs={}, fixed={}):
@@ -331,32 +365,41 @@ class parametrizer(object):
 		#       for now, just try to keep bin sizes big enough (>10 ok, >20 ideal)
 
 
-	def curve_fit(self, xdata, ydata, yerr, f, f_args=[], f_kwargs={}, fixed=None, bounds=None, p0=None):
-		"""fits f(p, *f_args, **f_kwargs) = ydata, using given yerr as sigma"""
+	def curve_fit(self, xdata, ydata, yerr, f, f_args=[], f_kwargs={}, fixed=None, bounds=None, p0=None, xerr=None):
+		"""fits f(xdata, p, *f_args, **f_kwargs) = ydata, using given yerr as sigma"""
 
 		# ensure type(fixed) is dict
 		# None -> empty dict
 		if fixed is None:
 			fixed = {}
 
+		# create filter for positive (valid) yerr
+		# and apply it to y data
+		f_valid = (yerr > 0)
+		ydata = ydata[f_valid]
+		yerr  = yerr[ f_valid]
+		# don't apply to xdata as it doesn't have same shape
+		# if type(xdata) is np.ndarray:
+		# 	xdata = xdata[f_valid]
+
 		# convert function to form f([p1, p2, ..., pm], *args, **kwargs)
 		# m is the number of varied parameters, which is the total number of
 		# parameters registered in self._names, minus the number of
 		# fixed parameters.
-		f_wrapped = self._wrap_for_curve_fit(f, f_args, f_kwargs, fixed)
+		f_wrapped = self._wrap_for_curve_fit(f, f_valid, f_args, f_kwargs, fixed)
 
 		# get list of parameter names which are not fixed
 		names_varied = self._get_names_varied(fixed)
 
-
 		# Compose p0. Resulting object is list.
 		# 
 		# If p0 is given, it should be a dict of {"name":guess}.
+		# Any values not given in p0 will be supplied internally.
+		# 
 		# Since you don't know the order of the parameters, as an
-		# iterable is inappropriate
+		# iterable is inappropriate.
 		if p0 is None:
 			p0 = self._get_p0_varied_list(names_varied)
-
 		else:
 			p0 = [p0.get(_,self._guess.get(_,0.0)) for _ in names_varied]
 
@@ -367,27 +410,34 @@ class parametrizer(object):
 		NO_BOUNDS = (-np.inf, np.inf)
 		if bounds is None:
 			bounds = NO_BOUNDS
-			# pass
 		else:
 			bounds = [
 				[bounds.get(_,NO_BOUNDS)[0] for _ in names_varied],
 				[bounds.get(_,NO_BOUNDS)[1] for _ in names_varied],
 			]
 
+		# perform the optimization
 		v_opt, v_cov = opt.curve_fit(
-			f = f_wrapped,
-			xdata = xdata,
-			ydata = ydata,
-			p0 = p0,
-			sigma = yerr,
+			f      = f_wrapped,
+			xdata  = xdata,
+			ydata  = ydata,
+			sigma  = yerr,
 			absolute_sigma = True,
+			p0     = p0,
+			bounds = bounds,
 		)
 		param_result = self._compose_params(v_opt, fixed, True)
 		param_result.set_varied(v_opt, v_cov)
 
 		y_opt = f_wrapped(xdata, *v_opt)
+		if xdata is None:
+			y_opt_err = self.vector_num_error_p_only(param_result, f, xdata, f_args, f_kwargs)
+		else:
+			y_opt_err = self.vector_num_error_p_xdiag(param_result, f, xdata, xerr, f_args, f_kwargs)
+
 		y_resid = ydata - y_opt
-		y_pull = y_resid / yerr
+		y_resid_err = np.sqrt(yerr**2 + y_opt_err**2)
+		y_pull = y_resid / y_resid_err
 
 		chi2  = (y_pull**2).sum()
 		ndof  = ydata.size - v_opt.size
@@ -395,7 +445,113 @@ class parametrizer(object):
 
 		param_result.set_result(chi2, ndof)
 
-		return param_result
+		# todo: class for fit results
+		return param_result, y_opt, y_opt_err
+
+
+	def vector_df_dp(self, param, f, xdata=None, f_args=[], f_kwargs={}, eps=1e-4, rel_eps=True):
+		"""approximate the derivative of f with respect to parameters p"""
+		f_p = f(xdata, param, *f_args, **f_kwargs)
+		df_dp = []
+
+		# print('param properties')
+		# print(param.v_names)
+		# print(param.v_index)
+		# print(param.v_values)
+
+		for ip,p in enumerate(param.v_names):
+			# remember initial value so we can return it after varying
+			p_initial = param[p]
+			# determine amount to vary parameter
+			this_eps = eps.get(p, 1e-6) if type(eps) is dict else eps
+			delta_p = param[p] * this_eps if rel_eps else this_eps
+			
+			# calculate f with plus and minus delta_p
+			param[p] = p_initial + delta_p
+			f_p_plus_dp = f(xdata, param, *f_args, **f_kwargs)
+			# param[p] = p_initial - delta_p
+			# f_p_minus_dp = f(xdata, param, *f_args, **f_kwargs)
+			
+			# return to initial value
+			param[p] = p_initial
+			
+			# calculate df/dp and append
+			# delta_f = (f_p_plus_dp - f_p_minus_dp) / 2.0
+			delta_f = (f_p_plus_dp - f_p)
+			df_dp.append(delta_f / delta_p)
+
+			# print("{:>2} {:>12} : {:>12.4f} (+ {:>8.4f}) -> {}".format(ip, p, param[p], delta_p, list(df_dp[-1][:4])))
+			
+		return np.stack(df_dp, axis=1)
+
+	def vector_df_dx(self, param, f, xdata, f_args=[], f_kwargs={}, eps=1e-4, rel_eps=True):
+		"""approximate the derivative of f with respect to xdata"""
+		f_x = f(xdata, param, *f_args, **f_kwargs)
+		df_dx = []
+
+		for i,xi in enumerate(xdata):
+
+			xi_initial = xdata[i]
+			delta_xi = eps * xdata[i] if (rel_eps and xdata[i]) else eps
+
+			# if delta_xi > 0:
+			xdata[i] = xi_initial + delta_xi
+			f_x_plus_dx = f(xdata, param, *f_args, **f_kwargs)
+			xdata[i] = xi_initial
+			df_dx.append((f_x_plus_dx - f_x) / delta_xi)
+
+			# else:
+				# df_dx.append(np.zeros(f_x.shape))
+
+		return np.stack(df_dx, axis=1)
+
+
+	def vector_num_error_p_only(self, param, f, xdata=None, f_args=[], f_kwargs={}, eps=1e-4, rel_eps=True):
+		"""calculate approximate numerical error on vector valued
+		function f(xdata, param, *f_args, **f_kwargs) with respect to
+		param, at the given value of param and its covariance."""
+
+		# calculate jacobian of f with respect to param
+		f_jac = self.vector_df_dp(param, f, xdata, f_args, f_kwargs, eps, rel_eps)
+
+		# calculate covariance of f using J * COV * J^t
+		f_cov = np.matmul(np.matmul(f_jac, param.v_cov), np.transpose(f_jac))
+
+		# print("shapes for jac, cov, jac*cov*jac^t")
+		# print(f_jac.shape)
+		# print(param.v_cov.shape)
+		# print(f_err_sq.shape)
+		
+		# return error as sqrt(diag(cov))
+		return np.sqrt(np.diag(f_cov))
+
+
+	def vector_num_error_p_xdiag(self, param, f, xdata, xerr=None, f_args=[], f_kwargs={}, eps=1e-4, rel_eps=True):
+		"""calculate approximate numerical error on vector valued
+		function f(xdata, param, *f_args, **f_kwargs) with respect to
+		param and xdata.
+		Covariance for param is assumed to be supplied as param.v_cov.
+		Covariance for xdata is assumed to be diagonal, and if supplied,
+		should be supplied as a 1d array, xerr = sqrt(diag(xvoc)).
+		If not supplied, is calculated as sqrt(xdata.)"""
+		
+		# calculate error contribution from param
+		# f_err_param = self.vector_num_error_p_only(param, f, xdata, f_args, f_kwargs, eps, rel_eps)
+		f_jac_p = self.vector_df_dp(param, f, xdata, f_args, f_kwargs, eps, rel_eps)
+		f_err_p_squared = np.diag(np.matmul(np.matmul(f_jac_p, param.v_cov), np.transpose(f_jac_p)))
+
+		# calculate xerr if not specified
+		if xerr is None:
+			xerr = np.sqrt(xdata)
+
+		# calculate error contribution from xdata
+		f_jac_x = self.vector_df_dx(param, f, xdata, f_args, f_kwargs, eps, rel_eps)
+		f_err_x_squared = np.diag(np.matmul(f_jac_x * xerr[None,:], np.transpose(f_jac_x)))
+
+		# return error as sum in quadrature
+		# print("err_p_sq", list(f_err_p_squared[:20]))
+		# print("err_x_sq", list(f_err_x_squared[:20]))
+		return np.sqrt(f_err_p_squared + f_err_x_squared)
 
 
 	def scalar_num_error_p_only(self, param, f, f_args=[], f_kwargs={}):
@@ -404,13 +560,13 @@ class parametrizer(object):
 		assuming that the only source of error is the covariance of
 		the parameters in param."""
 
-		# wrap f(param_holder param, *f_args, **f_kwargs)
+		# wrap f(param_manager param, *f_args, **f_kwargs)
 		# into f(pk, *f_args, **f_kwargs)
 		f_wrapped = self._wrap_for_approx_fprime(f, f_args, f_kwargs, param.fixed)
 
 		# calculate numerical jacobian of f with respect to the varied
 		# paramters at param.v_opt
-		# todo: make param_holder class have v_values, v_cov, etc.
+		# todo: make param_manager class have v_values, v_cov, etc.
 		#       while being agnostic as to whether they correspond to
 		#       the result of an optimization routine.
 		f_jac = opt.approx_fprime(param.v_values, f_wrapped, 1.5e-8)
@@ -420,15 +576,6 @@ class parametrizer(object):
 
 		# return square root of sigma squared
 		return f_err_sq ** 0.5
-
-	def vector_num_error_p_only(self, ):
-		...
-
-	def scalar_num_error(self, ):
-		...
-
-	def vector_num_error(self, ):
-		...
 
 
 
@@ -457,7 +604,7 @@ if __name__ == "__main__":
 	# true parameter values and a holder instance for them
 	# vtrue = {"a":12,"b":18,"r1":4.25,"r2":13.50}
 	vtrue = {"bg":120, "n1":240, "mu1":9, "sigma1":2, "n2":810, "mu2":16, "sigma2":1}
-	ptrue = param_holder(vtrue, v_names = sorted(vtrue.keys()), f_names = [])
+	ptrue = param_manager(vtrue, v_names = sorted(vtrue.keys()), f_names = [])
 
 	# unfair: guess starts at true values
 	par = parametrizer(vtrue)
