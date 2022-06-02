@@ -26,6 +26,7 @@ import utils.cli     as cli
 
 # filesystem locations
 # todo: use os.sep to support multiple platforms
+DATA_DIR   = "../xrd-analysis/data/root/scintillator"
 DATA_LOC   = "../xrd-analysis/data/root/scintillator/Run{}.root"
 CALIB_LOC  = "./data/calibration/{}.csv"
 FIG_LOC    = "./figs/{}.png"
@@ -177,17 +178,37 @@ def extract_arguments(args):
 	"""extract and prrocess command line arguments"""
 
 	# run
+	# try to interpret as integer -> numeric file in default location
 	try:
 		run_id = int(args["run"])
 		run = DATA_LOC.format(run_id)
+	# not an integer
 	except:
 		run = args["run"]
+
+		# no extension -> .root
 		if not (run.endswith(EXT_ROOT) or run.endswith(EXT_NPZ)):
 			run += EXT_ROOT
-		which_ext = '.'+run.rpartition('.')[2]
-		run_id = int(run.rpartition(os.sep)[2].partition(which_ext)[0][3:])
+
+		# no sep -> default location
+		if os.sep not in run:
+			run = os.sep.join([DATA_DIR, run])
+
+		# extract file name and extension
+		name, _, ext = run.rpartition(os.sep)[2].rpartition('.')
+
+		# try to extract number from name
+		try:
+			if name.lower().startswith("run"):
+				run_id = int(name[3:])
+			else:
+				run_id = -1
+		except:
+			run_id = -1
 		# todo: better extraction of run#. Will fail if filename format changes.
 		# could also switch to using full filename instead of ID in calibration entries.
+
+	print(run, run_id)
 
 	# fit
 	fits = [data.split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]

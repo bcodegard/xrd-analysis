@@ -168,7 +168,7 @@ LEAVES_GAMMA = [
 	"GammaTracks->fBits",
 ]
 
-def root_canal(file_in, file_out, leaves_event=None, leaves_gamma=None, ):
+def root_extract(file_in, file_out, leaves_event=None, leaves_gamma=None, ):
 	
 	# if tree_name is None:
 	tree_name = TREE_NAME
@@ -567,24 +567,58 @@ PVE = {
 if __name__ == '__main__':
 	print("cwd: {}".format(os.getcwd()))
 	
-	if False:
+	if True:
 
-		# # sim data
-		# for src in SOURCES:
-		# 	print('\n\n\nPerforming root canal on sim data for src {}\n'.format(src))
-		# 	file_in  = os.sep.join([SIM_DIR    , "{}.root".format(src)])
-		# 	file_out = os.sep.join([SIM_OUT_DIR, "{}.npz".format(src)])
-		# 	root_canal(file_in, file_out)
+		# sources = SOURCES
+		# sources = ["Am241"]
+		# sources = ["Ba133","Cd109"]
+		sources = ["Co57"]
+		files_per_source = {
+			"Am241":["Am241x10.root"],
+			"Ba133":["Ba133x10.root", "Ba133x10_with53mult.root", "Ba133x10_with53.root"],
+			"Cd109":["Cd109x100.root", "Cd109x25.root", "Cd109x25_2.root", "Cd109x25_3.root", "Cd109x25_4.root"],
+			"Co57" :["Co57x10.root"],
+		}
 
-		# experimental  data
-		for run in [4291, 4293, 4292, 4294, 4225, 4226]:
-			print('\n\n\nPerforming root canal on experimental data for run {}\n'.format(run))
-			file_in  = os.sep.join([EXP_DIR    , "Run{}.root".format(run)])
-			file_out = os.sep.join([EXP_OUT_DIR, "Run{}.npz".format(run)])
-			root_canal(file_in, file_out, leaves_event=all, leaves_gamma=[])
+		# sim_dir = SIM_DIR
+		sim_dir = '/home/bode/Documents/GitHub/xrd-analysis/data/root/simulation2'
+
+		sim_out_dir = SIM_OUT_DIR
+
+		# sim data
+		for src in sources:
+			print("\nsource {}".format(src))
+
+			files = files_per_source.get(src, "{}.root".format(src))
+			if type(files) is str:
+				files = [files]
+
+			for file in files:
+				print("file {}".format(file))
+				
+				file_in  = os.sep.join([sim_dir    , file])
+				file_out = os.sep.join([sim_out_dir, file.replace(".root",".npz")])
+
+				if os.path.exists(file_out):
+					print("\toutput already exists for input file {}".format(file))
+					print("\tdelete ore move existing file if you want to re-process")
+					continue
+				
+				# file_out = os.sep.join([SIM_OUT_DIR, "{}.npz".format(src)])
+				print('\tExtracting data, sim data for src {}'.format(src))
+				print('\toutput file is {}'.format(file))
+
+				root_extract(file_in, file_out)
+
+		# # experimental  data
+		# for run in [4291, 4293, 4292, 4294, 4225, 4226]:
+		# 	print('\n\n\nExtracting data, experimental data for run {}\n'.format(run))
+		# 	file_in  = os.sep.join([EXP_DIR    , "Run{}.root".format(run)])
+		# 	file_out = os.sep.join([EXP_OUT_DIR, "Run{}.npz".format(run)])
+		# 	root_extract(file_in, file_out, leaves_event=all, leaves_gamma=[])
 
 	if False:
 		main_pyroot()
 
-	if True:
+	if False:
 		test_use()

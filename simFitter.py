@@ -41,19 +41,45 @@ SOURCES = [
 # 
 # These are also used to mark vertical lines on plots
 PVE_KEV = {
-	"Am241": { "14.1":[ 13, 15],  "18.1":[ 17, 19],  "59.5":[ 59, 60], },
-	"Cd109": { "22.1":[ 21, 23],  "25.1":[ 24, 26],  "88.0":[ 86, 90], },
-	"Ba133": { "31.1":[ 30, 32],  "81.0":[ 80, 82], "303.2":[302,304], "356.0":[355,357], },
-	"Co57" : { "14.1":[ 13, 15], "122.1":[121,123], "136.1":[135,137], },
-	"Mn54" : {"835.0":[834,836], },
-	"Na22" : {"511.0":[510,512], },
+	"Am241": {
+		# "14.1":[ 13, 15], # too low energy to contribute many (any?) events
+		"18.1":[  0, 19], # currently lumps in all peaks below the 20.5KeV peaks
+		"20.5":[ 19, 22], 
+		"26.5":[ 26, 27], 
+		"59.5":[ 59, 60],
+	},
+	"Cd109": {
+		"22.1":[ 21, 23],
+		"25.1":[ 24, 26],
+		"88.0":[ 86, 90],
+	},
+	"Ba133": {
+		"31.1" :[ 30, 32], 
+		"53.5" :[ 52, 54],
+		"81.0" :[ 80, 82],
+		"303.2":[302,304],
+		"356.0":[355,357],
+	},
+	"Co57" : {
+		"14.1" :[ 13, 15],
+		"122.1":[121,123],
+		"136.1":[135,137],
+	},
+	"Mn54" : {
+		"835.0":[834,836],
+	},
+	"Na22" : {
+		"511.0":[510,512],
+	},
 }
-del PVE_KEV["Am241"]["18.1"] # 
-del PVE_KEV["Am241"]["14.1"] # these have no associated energy deposits in scintillators
-del PVE_KEV["Co57" ]["14.1"] # they would cause issues for fitting if included.
 
-# # remove these when not treating saturation region
-del PVE_KEV["Co57" ]["136.1"] # temporarily disable while area range
+# # too low energy or too low statistics to contribute
+del PVE_KEV["Co57" ]["14.1"]
+
+# # remove these when not treating PMT saturation region
+# del PVE_KEV["Co57" ]["136.1"]
+
+# remove when not treating DRS saturation region
 del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
 
 
@@ -77,20 +103,28 @@ DIR_SIM_SRC = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/sim"
 # DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator"
 DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/exp"
 DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/exp"
+
 FILENAME_SIM_SRC = "{src}.npz"
+FILENAME_SIM_SRC_BY = {
+	"Am241":"{src}x10.npz",
+	"Ba133":"{src}x10_with53mult.npz",
+	"Cd109":"{src}x100.npz",
+	"Co57" :"{src}x10.npz",
+}
+FILES_SIM_SRC = {_:os.sep.join([DIR_SIM_SRC, FILENAME_SIM_SRC_BY.get(_,FILENAME_SIM_SRC).format(src=_)]) for _ in SOURCES}
+
 # FILENAME_EXP_SRC = "Run{run}.root"
 # FILENAME_EXP_BG  = "Run{run}.root"
 FILENAME_EXP_SRC = "Run{run}.npz"
 FILENAME_EXP_BG  = "Run{run}.npz"
-FILE_SIM_SRC = os.sep.join([DIR_SIM_SRC, FILENAME_SIM_SRC])
 FILE_EXP_SRC = os.sep.join([DIR_EXP_SRC, FILENAME_EXP_SRC])
 FILE_EXP_BG  = os.sep.join([DIR_EXP_BG , FILENAME_EXP_BG ])
-FILES_SIM_SRC = {_:FILE_SIM_SRC.format(src=_)               for _ in SOURCES}
+# FILES_SIM_SRC = {_:FILE_SIM_SRC.format(src=_)               for _ in SOURCES}
 FILES_EXP_SRC = {_:FILE_EXP_SRC.format(run=RUNS_EXP_SRC[_]) for _ in SOURCES}
 FILES_EXP_BG  = [FILE_EXP_SRC.format(run=_) for _ in RUNS_EXP_BG]
 
 # channel number identification
-CH_COMP = [1,2,3]
+CH_COMP = [1,2,3,4]
 CH_LYSO = 4
 CH_ALL  = CH_COMP + [CH_LYSO]
 
@@ -144,10 +178,10 @@ LEAVES_LOAD_EXP_BG  = {LEAF_EXP_AREA_PVS.format(drs=DRS_ID, ch=_) for _ in CH_AL
 
 # idential ranges for all sources; include PMT saturation
 AREA_RANGE_NVS = {
-	"Am241":{1:[12,150], 2:[12,150], 3:[12,165]},
-	"Ba133":{1:[12,150], 2:[12,150], 3:[12,165]},
-	"Cd109":{1:[12,150], 2:[12,150], 3:[12,165]},
-	"Co57" :{1:[12,150], 2:[12,150], 3:[12,165]},
+	"Am241":{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
+	"Ba133":{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
+	"Cd109":{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
+	"Co57" :{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
 }
 
 # # include PMT saturation but exclude poorly simulated low tails
@@ -677,7 +711,7 @@ class routine(object):
 						{k:v[this_ftr] for k,v in arrays.items()},
 						import_copies=False, export_copies=False)
 				else:
-					self.vp("discarding this component since it has no events")
+					self.vp(2, "discarding this component since it has no events")
 
 				del this_ftr
 			del arrays
@@ -940,7 +974,8 @@ class routine(object):
 					(self.spec_exp_src_nvs[ch][src] - self.spec_exp_src_nvs_err[ch][src]) / widths,
 					color='k',
 					step='mid',
-					alpha=0.2
+					alpha=0.2,
+					label='source (observed)'
 				)
 				plt.step(mids, self.spec_exp_src_nvs[ch][src] / widths, color='k', where='mid')
 				
@@ -950,13 +985,14 @@ class routine(object):
 					(self.spec_exp_bg_nvs[ch][src] - self.spec_exp_bg_nvs_err[ch][src]) / widths,
 					color='g',
 					step='mid',
-					alpha=0.4
+					alpha=0.4,
+					label='background (observed)'
 				)
 				plt.step(mids, self.spec_exp_bg_nvs[ch][src] / widths, color='g', where='mid')
 				
-				plt.xlabel('Area (nVs)')
 				plt.title("observed area spectrum, {}".format(src))
-
+				plt.xlabel('Area (nVs)')
+				plt.legend()
 
 
 				plt.subplot(nr,nc,i+1+nsrc)
@@ -964,29 +1000,54 @@ class routine(object):
 					mids   = self.mids_e_kev[ch][src][e]
 					edges  = self.edges_e_kev[ch][src][e]
 					widths = edges[1:] - edges[:-1]
-					plt.fill_between(mids, spec/widths, step='mid', alpha=0.3)
-					plt.step(mids, spec/widths, where='mid', label="{} KeV".format(e))
+					plt.fill_between(mids, spec/widths, step='mid', alpha=0.3, label="{} KeV".format(e))
+					plt.step(mids, spec/widths, where='mid')
 				plt.xlabel('Energy (KeV)')
 				plt.title("simulated energy deposits, {}".format(src))
 				plt.yscale('log')
 				plt.legend()
+
 			plt.show()
 
-	def show_evaluate(self, pm, ch, xdata=None, incl_exp=True, incl_sep=True, incl_sim_e=False):
+	def show_evaluate(self, pm, ch, xdata=None, incl_exp=True, incl_sep=True, incl_sim_e=False, incl_err=True):
 
 		ev     = self.evaluate(xdata, pm, ch)
-		ev_err = self.parametrizer.vector_num_error_p_only(pm, self.evaluate, xdata, [ch])
-
 		model     = self.unflatten_sources(ev)
-		model_err = self.unflatten_sources(ev_err)
+
+		if incl_err:
+			ev_err = self.parametrizer.vector_num_error_p_only(pm, self.evaluate, xdata, [ch])
+			model_err = self.unflatten_sources(ev_err)
+
+		if incl_sim_e:
+			pm.rho_p   *= 1e-1
+			pm.res_s_a *= 1e-1
+			pm.res_s_b *= 1e-1
+			ev_zres = self.evaluate(xdata, pm, ch)
+			pm.rho_p   *= 1e+1
+			pm.res_s_a *= 1e+1
+			pm.res_s_b *= 1e+1
+			model_zres = self.unflatten_sources(ev_zres)
+
 
 		nc = len(model)
+		fig,ax = plt.subplots(1,nc,sharex=False,sharey=False)
+		fig.subplots_adjust(
+		    top    = 0.9 ,
+		    bottom = 0.08,
+		    left   = 0.03,
+		    right  = 0.99,
+		    hspace = 0.2 ,
+		    wspace = 0.2 ,
+		)
+		fig.set_size_inches(nc*5,7)
+		fig.set_dpi(120)
+
 		for i,src in enumerate(sorted(model.keys())):
+
 			this_edges = self.edges_a_nvs[ch][src]
 			this_w = this_edges[1:] - this_edges[:-1]
 			this_x = self.mids_a_nvs[ch][src]
 			this_model     = model[src]
-			this_model_err = model_err[src]
 			plt.subplot(1,nc,i+1)
 
 			if incl_exp:
@@ -1002,15 +1063,17 @@ class routine(object):
 					color='k',
 				)
 
-			plt.step(this_x, this_model/this_w, color='b', where='mid', label='best fit')
-			plt.fill_between(
-				x  = this_x,
-				y1 = (this_model+this_model_err) / this_w,
-				y2 = (this_model-this_model_err) / this_w,
-				step='mid',
-				alpha=0.3,
-				color='b',
-			)
+				if incl_err:
+					this_model_err = model_err[src]
+					plt.step(this_x, this_model/this_w, color='b', where='mid', label='best fit')
+					plt.fill_between(
+						x  = this_x,
+						y1 = (this_model+this_model_err) / this_w,
+						y2 = (this_model-this_model_err) / this_w,
+						step='mid',
+						alpha=0.3,
+						color='b',
+					)
 
 			if incl_sep:
 				# plot background component
@@ -1031,13 +1094,28 @@ class routine(object):
 					)
 
 			if incl_sim_e:
+				
+				# plot source emission peaks converted to area with zero resolution
 				for k,v in PVE_KEV[src].items():
 					pve = float(k)
 					mu_a_pve, _ = self.E_to_mu_sigma(pve, pm)
 					plt.axvline(mu_a_pve, label='{} KeV'.format(pve))
 
+				# plot full source spectra with zero resolution, but including saturation xf
+				this_model_zres = model_zres[src]
+				plt.step(this_x, this_model_zres/this_w, color='c', where='mid', label='0 resolution')
+				# plt.fill_between(
+				# 	x  = this_x,
+				# 	y1 = (this_model+this_model_err) / this_w,
+				# 	y2 = (this_model-this_model_err) / this_w,
+				# 	step='mid',
+				# 	alpha=0.3,
+				# 	color='b',
+				# )
+
 			plt.title(src)
 			plt.xlabel('area (nVs)')
+			# plt.yscale('log')
 			plt.legend()
 
 		if pm.chi2 is not None:
@@ -1047,9 +1125,8 @@ class routine(object):
 			plt.suptitle('channel {}'.format(ch))
 		plt.show()
 
-	def show_evaluate_p0(self):
-		for ch in CH_COMP:
-			self.show_evaluate(self.parametrizer.get_p0(), ch)
+	def show_evaluate_p0(self, ch):
+		self.show_evaluate(self.parametrizer.get_p0(), ch, incl_err=False)
 
 
 	@fn_indent
@@ -1150,7 +1227,7 @@ class routine(object):
 			self.projectors[ch] = {}
 			for src in SOURCES:
 				self.projectors[ch][src] = {}
-				for e in PVE_KEV[src].keys():
+				for e in self.sim_src[src].keys():#PVE_KEV[src].keys():
 
 					# todo: calculate 2d bins once and give references
 					#       if memory use becomes too large
@@ -1187,7 +1264,7 @@ class routine(object):
 		pieces = []
 		for src in sorted(SOURCES):
 			pieces.append(self.spec_exp_bg_nvs[ch][src])
-			for e in PVE_KEV[src].keys():
+			for e in self.sim_src[src].keys():#PVE_KEV[src].keys():
 				pieces.append(self.spec_sim_src_kev[ch][src][e])
 		return np.concatenate(pieces, axis=0)
 
@@ -1195,7 +1272,7 @@ class routine(object):
 		pieces = []
 		for src in sorted(SOURCES):
 			pieces.append(self.spec_exp_bg_nvs_err[ch][src])
-			for e in PVE_KEV[src].keys():
+			for e in self.sim_src[src].keys():#PVE_KEV[src].keys():
 				pieces.append(self.spec_sim_src_kev_err[ch][src][e])
 		return np.concatenate(pieces, axis=0)
 
@@ -1302,7 +1379,7 @@ class routine(object):
 		for ip,p in enumerate(pm_opt.v_names):
 			print("{:>2} {:>16} = {:>10.3e} \xb1 {:>10.6e}".format(ip, p, pm_opt.v_opt[ip], pm_opt.v_err[ip]))
 		
-		self.show_evaluate(pm_opt, ch, xdata=xdata_flat, incl_sep=True)
+		self.show_evaluate(pm_opt, ch, xdata=xdata_flat, incl_sep=True, incl_sim_e=False)
 
 		# x data (shape != shape of ydata)
 		# x      = xdata_flat
@@ -1335,12 +1412,14 @@ def main():
 	# rtn.show_spectra()
 	# sys.exit(0)
 
-	# rtn.show_evaluate_p0()
+	# rtn.setup_model(1)
+	# rtn.show_evaluate_p0(1)
 	# sys.exit(0)
 
-	ch_fit = CH_COMP
+	# ch_fit = CH_COMP
 	# ch_fit = [1]
 	# ch_fit = [2,3]
+	ch_fit = [1,2,3]
 
 	for ch in ch_fit:
 		rtn.setup_model(ch)
@@ -1402,7 +1481,8 @@ def main():
 			for src in SOURCES:
 				arrays |= {"exp_{}_{}".format(k,src):rtn.exp_src[src][k] for k in rtn.exp_src[src].keys}
 			
-			file = "./data/spectra/ch{}.npz".format(ch)
+			sim_version = 2
+			file = "./data/spectra/simv{}_ch{}.npz".format(sim_version, ch)
 			np.savez(file, **arrays)
 
 
