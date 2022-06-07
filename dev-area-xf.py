@@ -12,6 +12,8 @@ import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.lines  as lines
+import scipy.optimize    as opt
 
 import utils.fileio  as fileio
 import utils.display as display
@@ -380,15 +382,19 @@ def get_peaks(spectra, branch, exclude_source_peaks=False, require_id=True):
 
 	return result
 
-def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show_calibrations=False):
+def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show_calibrations=False,fudge_errors=0.0):
 	area, energy, area_err, energy_err, peak_id = get_peaks(spectra, branch, exclude_source_peaks)
+
+	if fudge_errors:
+		area_err += area*fudge_errors
 
 	popt, perr, chi2, ndof, cov = energy_model.fit_with_errors(
 		area,
 		energy,
 		area_err,
 		energy_err,
-		True
+		True,
+		rootfit=True,
 		)
 
 	# print((energy - energy_model(area, *popt)))
@@ -471,7 +477,742 @@ def calibrate_energy(energy_model,spectra,branch,exclude_source_peaks=False,show
 	return popt, perr, chi2, ndof, cov, maxdev
 
 
+
+
+
+def gain_curve():
+
+	# bias voltage per run, in volts
+	bias = {
+		4134:1460,
+		4135:1450,
+		4136:1440,
+		4137:1430,
+		4138:1420,
+		4139:1410,
+		4140:1400,
+		4141:1390,
+		4142:1380,
+		4143:1370,
+		4144:1360,
+		4145:1350,
+		4146:1340,
+		4147:1330,
+		4148:1320,
+		4149:1310,
+		4150:1300,
+		4151:1200,
+		4152:1150,
+		4153:1150,
+		4154:1200,
+		4155:1150,
+		4156:1150,
+		4157:1100,
+		4158:1100,
+		4159:1050,
+		4160:1050,
+		4161:1000,
+		4162:1000,
+		4163:950,
+		4164:950,
+		4165:950,
+		4166:900,
+		4167:900,
+		4168:900,
+		4169:850,
+		4170:850,
+		4171:850,
+		4172:800,
+		4173:800,
+		4174:800,
+		4175:800,
+		4176:800,
+		4177:750,
+		4178:750,
+		4179:750,
+		4180:750,
+		4181:750,
+		4182:750,
+		4183:700,
+		4184:700,
+		4185:700,
+		4186:700,
+		4187:700,
+		4188:700,
+		4189:650,
+		4190:650,
+		4191:650,
+		4192:650,
+		4193:600,
+		4194:600,
+		4195:600,
+	}
+
+	color_by_ch = {
+		"area_3046_1":"darkred",
+		"area_3046_2":"g",
+		"area_3046_3":"b",
+	}
+
+	device_by_ch = {
+		"area_3046_1":"BigNaI, LG",
+		"area_3046_2":"SmallNaI 1, HG",
+		"area_3046_3":"SmallNaI 2, HG",
+	}
+
+	marker_by_src = {
+		"Cd109":"d", 5:"d",
+		"Ba133":"s", 2:"s",
+		"Co57" :"v", 6:"v",
+		"Na22" :"+", 3:"+",
+		"Mn54" :"*", 4:"*",
+		"Cs137":"2", 1:"2",
+		"SPE"  :".", 0:",",
+	}
+
+
+	spe_file = "./data/fits/2022_03_22_spe.csv"
+	spe_fits = fileio.load_fits(spe_file)
+
+	src_files = [
+		"./data/fits/2022_03_22_src_cd109.csv",
+		"./data/fits/2022_03_22_src_ba133.csv",
+		"./data/fits/2022_03_22_src_co57.csv",
+		"./data/fits/2022_03_22_src_na22.csv",
+		"./data/fits/2022_03_22_src_mn54.csv",
+		"./data/fits/2022_03_22_src_cs137.csv",
+	]
+	src_fits = sum([fileio.load_fits(_) for _ in src_files], [])
+
+
+
+	plot_channels = [1,2,3]
+	# plot_channels = [1]
+	plot_separate = True
+	if plot_separate:
+		plt.subplots(1,3,sharex=True,sharey=True)
+
+	all_bias = [] # lists of bias, peak ID, channel for all entries
+	all_id   = [] # including sources and SPE
+	all_ch   = [] # 
+	all_area     = [] # 
+	all_area_err = [] # 
+
+
+	# collect and plot SPE peaks
+	spe = {}
+	for fit in spe_fits:
+		if fit.fit_branch not in spe.keys():
+			spe[fit.fit_branch] = []
+		spe[fit.fit_branch].append(fit)
+
+		all_bias.append(bias[fit.run])
+		all_id.append(0)
+		all_ch.append(int(fit.fit_branch[-1]))
+		all_area.append(fit.popt_gaus[1])
+		all_area_err.append(fit.perr_gaus[1])
+
+	for ch,fits in spe.items():
+		if int(ch[-1]) not in plot_channels:
+			continue
+		if plot_separate:plt.subplot(1,3,int(ch[-1]))
+		plt.errorbar(
+			[bias[_.run] for _ in fits],
+			[_.popt_gaus[1] for _ in fits],
+			[_.perr_gaus[1] for _ in fits],
+			marker=".",
+			ls="--",
+			color=color_by_ch[ch],
+		)
+
+
+	# collect and plot source peaks
+	# separate datasets by: channel, peak ID
+	src = {}
+	for fit in src_fits:
+		for ig,g in enumerate(fit.gaus_names):
+			
+			if not (g.startswith("x")):
+				continue
+
+			peak_id = int(g[1:])
+			identifier = (fit.fit_branch, peak_id)
+
+			entry = [fit.fit_branch, peak_id, fit.run, fit.popt_gaus[1+3*ig], fit.perr_gaus[1+3*ig], ]
+
+			if identifier in src.keys():
+				src[identifier].append(entry)
+			else:
+				src[identifier] = [entry, ]
+
+			all_bias.append(bias[fit.run])
+			all_id.append(peak_id)
+			all_ch.append(int(fit.fit_branch[-1]))
+			all_area.append(fit.popt_gaus[1+3*ig])
+			all_area_err.append(fit.perr_gaus[1+3*ig])
+
+	for key,entries in src.items():
+		if int(key[0][-1]) not in plot_channels:
+			continue
+		if plot_separate:plt.subplot(1,3,int(key[0][-1]))
+		plt.errorbar(
+			[bias[_[2]] for _ in entries],
+			[_[3] for _ in entries],
+			[_[4] for _ in entries],
+			marker=marker_by_src[entries[0][1]//100],
+			ls='-',
+			color=color_by_ch[entries[0][0]],
+		)
+
+
+
+
+	# inclusive limits per peak ID
+	lims_by_id = {
+		0  :[1430, np.inf],
+		200:[ 750, np.inf],
+		500:[ 800, np.inf],
+
+		401:[-np.inf, 750],
+	}
+
+	# exclude some ids altogether
+	# exclude_ids = {101, 300, 401, }
+	exclude_ids = set()
+
+	# remove undesired peaks from lists before fitting
+	# enumerate backwards
+	for ip,p in list(enumerate(all_id))[::-1]:
+		discard = False
+
+		# if all_ch[ip] != 1:
+		# 	discard = True
+
+		lim = lims_by_id.get(p, False)
+		if lim:
+			v = all_bias[ip]
+			if (v<lim[0]) or (v>lim[1]):
+				discard = True
+		
+		if p in exclude_ids:
+			discard = True
+
+		if discard:
+			all_bias.pop(ip)
+			all_id.pop(ip)
+			all_ch.pop(ip)
+			all_area.pop(ip)
+			all_area_err.pop(ip)
+
+	
+
+	# model the whole plot using SPE area conversion
+
+	
+	# peaks_vary = []
+	# print(all_id)
+	print(sorted(list(set(all_id))))
+	# peaks_vary = list(set(all_id) - {200,203,601,500,501,})
+	peaks_vary = [101,300,401,500]
+	peaks_vary = sorted([_ for _ in peaks_vary if _ in all_id])
+	print(peaks_vary)
+	vary_bounds = []
+
+	fit_function = model_area(3, 1450, peaks_vary, set(all_id))
+
+	all_bias = np.array(all_bias)
+	all_id   = np.array(all_id  )
+	all_ch   = np.array(all_ch  )
+	xdata = np.stack((all_bias, all_id, all_ch), axis=0)
+
+	all_area     = np.array(all_area    )
+	all_area_err = np.array(all_area_err)
+
+	# adjust effective error for fitting
+	# based on ~5% systematic in measurement ability
+	area_err_fudge = 0.05
+	all_area_err = all_area_err + (area_err_fudge * all_area)
+
+	# # factor of 1.4 per 50V, translated to voltage per factor of e
+	# p0_vd = [50.0/math.log(1.4)]*3
+
+	# 
+	p0_coeff = [7.0,7.0,7.0]
+
+	# read off SPE curves at 1450V
+	p0_ape_ref = [3628.0, 5475.0, 6040.0]
+
+	# rough calculation using Co57 at 900V and SPE at 1450V
+	p0_epe = [0.0723, 0.1040, 0.1105]
+
+	# just zeros
+	p0_adj = [0.0] * len(peaks_vary)
+
+	# combined parameter guess
+	p0 = p0_coeff + p0_ape_ref + p0_epe + p0_adj
+
+	popt, pcov = opt.curve_fit(
+		fit_function, 
+		xdata,
+		all_area,
+		p0,
+		all_area_err,
+		True,
+		)
+	perr = np.sqrt(np.diag(pcov))
+	for ipar,par in enumerate(popt):
+		print("{:>11.4f} - {:>9.4f}".format(par, perr[ipar]))
+	print("")
+
+	# plot fits to data points
+	for ch in plot_channels:
+		if plot_separate:plt.subplot(1,3,ch)
+		plt.plot(xdata[0,xdata[2]==ch], fit_function(xdata[:,xdata[2]==ch], *popt), 'kx')
+
+	# plot fits to some energy lines
+	xaxis = np.logspace(math.log(550,10), math.log(1500,10), 100)
+	xones = np.ones(xaxis.shape)
+	# for (p,ch) in [(0,1), (601,1), (200,1), (203, 1), (500, 1), (501, 1), (101, 1), (300, 1), (401, 1),]:
+	for p in [0, 601, 200, 203, 500, 501, 101, 300, 401]:
+		for ch in [1, 2, 3]:
+			if plot_separate:plt.subplot(1,3,ch)
+			plt.plot(
+				xaxis,
+				fit_function(np.stack((xaxis, xones*p, xones*ch),axis=0),*popt),
+				'k-',
+			)
+
+
+	devices = ["BigNaI", "SmallNaI 1", "SmallNaI 2", "big LYSO"]
+	for ch in plot_channels:
+
+		if plot_separate:
+			plt.subplot(1,3,ch)
+			plt.title("channel {} - {}".format(ch, devices[ch-1]))
+
+		# custom labels
+		legend_items=[
+			# lines.Line2D([],[],color='darkred',ls='-',marker='o',label='ch1 (BigNaI, LG)'),
+			# lines.Line2D([],[],color='g'      ,ls='-',marker='o',label='ch2 (SmallNaI 1, HG)'),
+			# lines.Line2D([],[],color='b'      ,ls='-',marker='o',label='ch3 (SmallNaI 2, HG)'),
+			lines.Line2D([],[],color='k',ls='',marker='.',label='SPE'),
+			# lines.Line2D([],[],color='k',ls='-',marker='',label='sources'),
+		]
+		src_labels = True
+		if src_labels:
+			legend_items += [lines.Line2D([],[],color='k',ls='',marker=mkr,label=src) for src,mkr in marker_by_src.items() if type(src) is str]
+			plt.legend(handles=legend_items)
+		# markup and show plot
+		plt.xlabel("bias (volts)")
+		plt.ylabel("area (pVs)")
+		plt.xscale("log")
+		plt.yscale("log")
+	
+	plt.show()
+
+def model_area(nc=3, vref=1450, peak_ids_vary_e=[], ids_needed=None, ):
+
+			# jank but it makes it easier since we can index this with arrays
+			eref = np.zeros(1 + max(peaks.keys()))
+			for p in peaks.values():
+				if p.i>=0:
+					eref[p.i] = p.e
+
+			# array to be updated and indexed in the function
+			emod = eref.copy()
+
+			# compose lists of relevant and free/fixed energies
+			ids_needed = sorted(ids_needed if ids_needed else [_ for _ in peaks.keys() if _>=0])
+			free_e_ids = sorted([_ for _ in ids_needed if _ in peak_ids_vary_e])
+
+			def f(x, *free_params):
+
+				# x is a (3,npeaks) array of integers
+				# (1,:) is bias voltage, in volts
+				# (2,:) is peak ID (-1 for no ID, 0 for SPE, n>=100 for peak-associated)
+				# (3,:) is channel ID (1, 2, or 3 here.)
+				bias    = x[0]
+				peak_id = x[1].astype(int)
+				ch      = x[2].astype(int)
+
+				# extract parameters
+				fpa = np.array(free_params)
+				coeff   = fpa[0*nc:1*nc] # power law coefficient
+				ape_ref = fpa[1*nc:2*nc] # area of SPE event at bias voltage VREF
+				epe     = fpa[2*nc:3*nc] # average energy needed to make one photoelectron
+				e_adjust = fpa[3*nc:] # fractional changes to energies. E' = E*(1+this)
+
+				# update modified energy array
+				for iadj,adj in enumerate(e_adjust):
+					emod[free_e_ids[iadj]] = eref[free_e_ids[iadj]] * (adj+1)
+
+				# result array. starts as zeros, since we're going
+				# to populate it based on a criterion (source vs SPE)
+				area = np.zeros(bias.shape)
+
+				# calculate SPE area for each entry
+				# for SPE events, this is the final result
+				# for source events, it will be scaled by E/Espe
+				# area_spe = ape_ref[ch-1] * np.exp((bias - vref) / vd[ch-1])
+				area_spe = ape_ref[ch-1] * np.power((bias / vref), coeff[ch-1])
+
+				# peak_id = 0 -> SPE
+				ftr_spe = (peak_id == 0)
+				area[ftr_spe] = area_spe[ftr_spe]
+
+				# peak_id >= 100 -> source
+				ftr_peak = (peak_id >= 100)
+				area[ftr_peak] = area_spe[ftr_peak] * (emod[peak_id[ftr_peak]] / epe[ch[ftr_peak]-1])
+
+				# leave the area of any other peaks as zero
+				return area
+
+			return f
+
+
+
+
 if __name__ == '__main__':
+
+
+	gain_curves = False
+	if gain_curves:
+
+		# bias voltage per run, in volts
+		bias = {
+			4134:1460,
+			4135:1450,
+			4136:1440,
+			4137:1430,
+			4138:1420,
+			4139:1410,
+			4140:1400,
+			4141:1390,
+			4142:1380,
+			4143:1370,
+			4144:1360,
+			4145:1350,
+			4146:1340,
+			4147:1330,
+			4148:1320,
+			4149:1310,
+			4150:1300,
+			4151:1200,
+			4152:1150,
+			4153:1150,
+			4154:1200,
+			4155:1150,
+			4156:1150,
+			4157:1100,
+			4158:1100,
+			4159:1050,
+			4160:1050,
+			4161:1000,
+			4162:1000,
+			4163:950,
+			4164:950,
+			4165:950,
+			4166:900,
+			4167:900,
+			4168:900,
+			4169:850,
+			4170:850,
+			4171:850,
+			4172:800,
+			4173:800,
+			4174:800,
+			4175:800,
+			4176:800,
+			4177:750,
+			4178:750,
+			4179:750,
+			4180:750,
+			4181:750,
+			4182:750,
+			4183:700,
+			4184:700,
+			4185:700,
+			4186:700,
+			4187:700,
+			4188:700,
+			4189:650,
+			4190:650,
+			4191:650,
+			4192:650,
+			4193:600,
+			4194:600,
+			4195:600,
+		}
+
+		color_by_ch = {
+			"area_3046_1":"darkred",
+			"area_3046_2":"g",
+			"area_3046_3":"b",
+		}
+
+		device_by_ch = {
+			"area_3046_1":"BigNaI, LG",
+			"area_3046_2":"SmallNaI 1, HG",
+			"area_3046_3":"SmallNaI 2, HG",
+		}
+
+		marker_by_src = {
+			"Cd109":"d", 5:"d",
+			"Ba133":"s", 2:"s",
+			"Co57" :"v", 6:"v",
+			"Na22" :"+", 3:"+",
+			"Mn54" :"*", 4:"*",
+			"Cs137":"2", 1:"2",
+			"SPE"  :".", 0:",",
+		}
+
+		spe_file = "./data/fits/2022_03_22_spe.csv"
+		spe_fits = fileio.load_fits(spe_file)
+
+		# this is not the gain curve file for sources
+		# src_file = "./data/fits/2022_03_18_src.csv"
+		# src_fits = fileio.load_fits(src_file)
+
+		src_files = [
+			"./data/fits/2022_03_22_src_cd109.csv",
+			"./data/fits/2022_03_22_src_ba133.csv",
+			"./data/fits/2022_03_22_src_co57.csv",
+			"./data/fits/2022_03_22_src_na22.csv",
+			"./data/fits/2022_03_22_src_mn54.csv",
+			"./data/fits/2022_03_22_src_cs137.csv",
+		]
+		src_fits = sum([fileio.load_fits(_) for _ in src_files], [])
+
+
+		plot_channels = [1,2,3]
+		# plot_channels = [1]
+		plot_separate = True
+		if plot_separate:
+			plt.subplots(1,3,sharex=True,sharey=True)
+
+		all_bias = [] # lists of bias, peak ID, channel for all entries
+		all_id   = [] # including sources and SPE
+		all_ch   = [] # 
+		all_area     = [] # 
+		all_area_err = [] # 
+
+
+		# collect and plot SPE peaks
+		spe = {}
+		for fit in spe_fits:
+			if fit.fit_branch not in spe.keys():
+				spe[fit.fit_branch] = []
+			spe[fit.fit_branch].append(fit)
+
+			all_bias.append(bias[fit.run])
+			all_id.append(0)
+			all_ch.append(int(fit.fit_branch[-1]))
+			all_area.append(fit.popt_gaus[1])
+			all_area_err.append(fit.perr_gaus[1])
+
+		for ch,fits in spe.items():
+			if int(ch[-1]) not in plot_channels:
+				continue
+			if plot_separate:plt.subplot(1,3,int(ch[-1]))
+			plt.errorbar(
+				[bias[_.run] for _ in fits],
+				[_.popt_gaus[1] for _ in fits],
+				[_.perr_gaus[1] for _ in fits],
+				marker=".",
+				ls="--",
+				color=color_by_ch[ch],
+			)
+
+
+		# collect and plot source peaks
+		# separate datasets by: channel, peak ID
+		src = {}
+		for fit in src_fits:
+			for ig,g in enumerate(fit.gaus_names):
+				
+				if not (g.startswith("x")):
+					continue
+
+				peak_id = int(g[1:])
+				identifier = (fit.fit_branch, peak_id)
+
+				entry = [fit.fit_branch, peak_id, fit.run, fit.popt_gaus[1+3*ig], fit.perr_gaus[1+3*ig], ]
+
+				if identifier in src.keys():
+					src[identifier].append(entry)
+				else:
+					src[identifier] = [entry, ]
+
+				all_bias.append(bias[fit.run])
+				all_id.append(peak_id)
+				all_ch.append(int(fit.fit_branch[-1]))
+				all_area.append(fit.popt_gaus[1+3*ig])
+				all_area_err.append(fit.perr_gaus[1+3*ig])
+
+		for key,entries in src.items():
+			if int(key[0][-1]) not in plot_channels:
+				continue
+			if plot_separate:plt.subplot(1,3,int(key[0][-1]))
+			plt.errorbar(
+				[bias[_[2]] for _ in entries],
+				[_[3] for _ in entries],
+				[_[4] for _ in entries],
+				marker=marker_by_src[entries[0][1]//100],
+				ls='-',
+				color=color_by_ch[entries[0][0]],
+			)
+
+
+
+
+		# inclusive limits per peak ID
+		lims_by_id = {
+			0  :[1430, np.inf],
+			200:[ 750, np.inf],
+			500:[ 800, np.inf],
+
+			401:[-np.inf, 750],
+		}
+
+		# exclude some ids altogether
+		# exclude_ids = {101, 300, 401, }
+		exclude_ids = set()
+
+		# remove undesired peaks from lists before fitting
+		# enumerate backwards
+		for ip,p in list(enumerate(all_id))[::-1]:
+			discard = False
+
+			# if all_ch[ip] != 1:
+			# 	discard = True
+
+			lim = lims_by_id.get(p, False)
+			if lim:
+				v = all_bias[ip]
+				if (v<lim[0]) or (v>lim[1]):
+					discard = True
+			
+			if p in exclude_ids:
+				discard = True
+
+			if discard:
+				all_bias.pop(ip)
+				all_id.pop(ip)
+				all_ch.pop(ip)
+				all_area.pop(ip)
+				all_area_err.pop(ip)
+
+	
+
+		# model the whole plot using SPE area conversion
+
+	
+		# peaks_vary = []
+		# print(all_id)
+		print(sorted(list(set(all_id))))
+		# peaks_vary = list(set(all_id) - {200,203,601,500,501,})
+		peaks_vary = [101,300,401,500]
+		peaks_vary = sorted([_ for _ in peaks_vary if _ in all_id])
+		print(peaks_vary)
+		vary_bounds = []
+
+		fit_function = model_area(3, 1450, peaks_vary, set(all_id))
+
+		all_bias = np.array(all_bias)
+		all_id   = np.array(all_id  )
+		all_ch   = np.array(all_ch  )
+		xdata = np.stack((all_bias, all_id, all_ch), axis=0)
+
+		all_area     = np.array(all_area    )
+		all_area_err = np.array(all_area_err)
+
+		# adjust effective error for fitting
+		# based on ~5% systematic in measurement ability
+		area_err_fudge = 0.05
+		all_area_err = all_area_err + (area_err_fudge * all_area)
+
+		# # factor of 1.4 per 50V, translated to voltage per factor of e
+		# p0_vd = [50.0/math.log(1.4)]*3
+
+		# 
+		p0_coeff = [7.0,7.0,7.0]
+
+		# read off SPE curves at 1450V
+		p0_ape_ref = [3628.0, 5475.0, 6040.0]
+
+		# rough calculation using Co57 at 900V and SPE at 1450V
+		p0_epe = [0.0723, 0.1040, 0.1105]
+
+		# just zeros
+		p0_adj = [0.0] * len(peaks_vary)
+
+		# combined parameter guess
+		p0 = p0_coeff + p0_ape_ref + p0_epe + p0_adj
+
+		popt, pcov = opt.curve_fit(
+			fit_function, 
+			xdata,
+			all_area,
+			p0,
+			all_area_err,
+			True,
+			)
+		perr = np.sqrt(np.diag(pcov))
+		for ipar,par in enumerate(popt):
+			print("{:>11.4f} - {:>9.4f}".format(par, perr[ipar]))
+		print("")
+
+		# plot fits to data points
+		for ch in plot_channels:
+			if plot_separate:plt.subplot(1,3,ch)
+			plt.plot(xdata[0,xdata[2]==ch], fit_function(xdata[:,xdata[2]==ch], *popt), 'kx')
+
+		# plot fits to some energy lines
+		xaxis = np.logspace(math.log(550,10), math.log(1500,10), 100)
+		xones = np.ones(xaxis.shape)
+		# for (p,ch) in [(0,1), (601,1), (200,1), (203, 1), (500, 1), (501, 1), (101, 1), (300, 1), (401, 1),]:
+		for p in [0, 601, 200, 203, 500, 501, 101, 300, 401]:
+			for ch in [1, 2, 3]:
+				if plot_separate:plt.subplot(1,3,ch)
+				plt.plot(
+					xaxis,
+					fit_function(np.stack((xaxis, xones*p, xones*ch),axis=0),*popt),
+					'k-',
+				)
+
+
+		devices = ["BigNaI", "SmallNaI 1", "SmallNaI 2", "big LYSO"]
+		for ch in plot_channels:
+
+			if plot_separate:
+				plt.subplot(1,3,ch)
+				plt.title("channel {} - {}".format(ch, devices[ch-1]))
+
+			# custom labels
+			legend_items=[
+				# lines.Line2D([],[],color='darkred',ls='-',marker='o',label='ch1 (BigNaI, LG)'),
+				# lines.Line2D([],[],color='g'      ,ls='-',marker='o',label='ch2 (SmallNaI 1, HG)'),
+				# lines.Line2D([],[],color='b'      ,ls='-',marker='o',label='ch3 (SmallNaI 2, HG)'),
+				lines.Line2D([],[],color='k',ls='',marker='.',label='SPE'),
+				# lines.Line2D([],[],color='k',ls='-',marker='',label='sources'),
+			]
+			src_labels = True
+			if src_labels:
+				legend_items += [lines.Line2D([],[],color='k',ls='',marker=mkr,label=src) for src,mkr in marker_by_src.items() if type(src) is str]
+				plt.legend(handles=legend_items)
+			# markup and show plot
+			plt.xlabel("bias (volts)")
+			plt.ylabel("area (pVs)")
+			plt.xscale("log")
+			plt.yscale("log")
+		
+		plt.show()
+
+
+
+
+
+
 
 	compare_peaks_across_datasets = False
 	if compare_peaks_across_datasets:
@@ -712,7 +1453,8 @@ if __name__ == '__main__':
 
 
 
-	plot_peak_area = True
+
+	plot_peak_area = False
 	if plot_peak_area:
 		desc = ''
 
@@ -820,8 +1562,9 @@ if __name__ == '__main__':
 		plt.show()
 
 
-	fit_direct = False
 
+
+	fit_direct = True
 	if fit_direct:
 
 
@@ -857,20 +1600,42 @@ if __name__ == '__main__':
 		# 	100, # 32KeV Cs137
 		# ]
 
-		# SmallNaI 1 and 2, 900V
-		setups = [[1,'l'],[1,'h'],[2,'l'],[2,'h']]
-		branches=["area_3046_3","area_3046_4","area_3046_3","area_3046_4"]
-		file_src_spec  = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
-		file_test_spec = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
+		# # SmallNaI 1 and 2, 900V
+		# setups = [[1,'l'],[1,'h'],[2,'l'],[2,'h']]
+		# branches=["area_3046_3","area_3046_4","area_3046_3","area_3046_4"]
+		# file_src_spec  = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
+		# file_test_spec = ['./data/fits/snai{}_{}g_src.csv'.format(*_) for _ in setups]
+
+		# # assembly, 870V
+		# branches = ["area_3046_1","area_3046_2","area_3046_3","area_3046_4"]
+		# file_src_spec  = ["./data/fits/2022_03_18_src.csv"]*4
+		# file_test_spec = ["./data/fits/2022_03_18_src.csv"]*4
+		# exclude_source_peaks=[
+		# 	-1,  # unidentified
+		# 	602, # subdominant
+		# 	101,300,401,400, # high energy 
+		# 	901, # Am241 26.5KeV
+		# 	# 200, # 31KeV Ba133
+		# 	500, # 22KeV Cd109
+		# 	# 100, # 32KeV Cs137
+		# ]
+
+
+
+		# final assembly, 870V, source calibration
+		branches = ["area_3046_1","area_3046_2","area_3046_3"]
+		file_src_spec  = ["./data/fits/2022_04_12_src_orig.csv"]*3
+		file_test_spec = ["./data/fits/2022_04_12_src_orig.csv"]*3
 		exclude_source_peaks=[
 			-1,  # unidentified
 			602, # subdominant
 			101,300,401,400, # high energy 
-			901, # Am241 26.5KeV
+			# 901, # Am241 26.5KeV
 			# 200, # 31KeV Ba133
 			500, # 22KeV Cd109
-			100, # 32KeV Cs137
-		]
+			# 501, # 88KeV Cd109
+			# 100, # 32KeV Cs137
+		]		
 
 		
 
@@ -889,28 +1654,33 @@ if __name__ == '__main__':
 				branches[ifs],
 				exclude_source_peaks=exclude_source_peaks,
 				show_calibrations=True,
+				fudge_errors = 0.003,
 			)
 
-			colors_per_run = ["tab:brown","darkred","darkviolet","k","b","g","r","c","m","y"]
-			test_spec = fileio.load_fits(ft)
-			# print([_.popt_gaus for _ in test_spec])
-			test_colors = colors_per_run[:len(test_spec)]
-			labels = ["cs", "cd", "ba", "co", "am"]
-			main(
-				test_spec,
-				branches[ifs],
-				energy_model,
-				ec_results,
-				None,
-				require_id=False,
-				colors=test_colors,
-				labels=labels,
-				plot_area=True,
-				plot_area_t1=False,
-				plot_energy=True,
-				plot_area_xf=False,
-				show=True,
-			)
+			# colors_list = ["r","b","g","tab:brown","darkviolet","k","darkred","c","m","y"]
+			# test_spec = [_ for _ in fileio.load_fits(ft) if _.fit_branch == branches[ifs]]
+			# # print([_.popt_gaus for _ in test_spec])
+			# # test_colors = colors_list[:len(test_spec)]
+			# # labels = ["cs", "cd", "ba", "co", "am",]
+			# test_colors = sum([[colors_list[i]]*_.ngaus for i,_ in enumerate(test_spec)],[])
+			# labels=["Ba133", "Co57", "Cd109", "Cs137"]
+			# main(
+			# 	test_spec,
+			# 	branches[ifs],
+			# 	energy_model,
+			# 	ec_results,
+			# 	None,
+			# 	require_id=False,
+			# 	colors=test_colors,
+			# 	labels=labels,
+			# 	plot_area=True,
+			# 	plot_area_t1=False,
+			# 	plot_energy=True,
+			# 	plot_area_xf=False,
+			# 	show=True,
+			# )
+
+
 
 
 	plop = False
@@ -968,6 +1738,8 @@ if __name__ == '__main__':
 			plot_energy=True,
 			plot_area_xf=False,
 		)
+
+
 
 
 	fit_transformed = False
@@ -1118,17 +1890,3 @@ if __name__ == '__main__':
 		plt.gcf().set_size_inches(16,6)#,dpi=200)
 		plt.show()
 
-
-
-
-
-	# file_xf = './data/xf/xf_22to23_s5.csv'
-	# xfs = fileio.load_xf(file_xf)
-
-	# main(
-	# 	test_spec,
-	# 	branch,
-	# 	energy_model,
-	# 	ec_results,
-	# 	xfs[4],
-	# )

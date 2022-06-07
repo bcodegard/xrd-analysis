@@ -11,7 +11,15 @@ import itertools
 import numpy as np
 
 import scipy.optimize as opt
-import ROOT
+import scipy.odr as odr
+
+try:
+	import ROOT
+except:
+	_has_ROOT = False
+else:
+	_has_ROOT = True
+
 
 one_over_e = 1/math.e
 NO_BOUNDS = [-np.inf, np.inf]
@@ -19,153 +27,198 @@ NO_BOUNDS = [-np.inf, np.inf]
 
 
 
-def fit_graph_with_root(
-		func,
-		xdata,
-		ydata,
-		xerr,
-		yerr,
-		bounds,
-		p0,
-		rfs,
-		need_cov=False,
-		):
-	"""	performs a root fit on xdata,ydata with specified errors"""
+FS_FLOAT = "{:<12.4f}"
+format_list  = lambda l,s=", ":s.join([FS_FLOAT.format(_) for _ in l])
+FS_RESULT = "{:<5} | {:<8.2f}| {:<6}| {:<8.4f}| {}| {}"
+
+
+
+
+# # wrap func so that it has the correct parameter order
+# # and so that it does not create segmentation faults
+# 	# root doesn't like it if you try to access past the end of p
+# 	# which python does for *p or other iteration methods
+# 	# so we need to explicitly extract only as many arguments
+# 	# as there are included.
+# 	# segfault will occur if we don't do this.
+def convert_func_for_root(func,npars):
+	def func_for_root(x,p):
+		return func(x[0],*[p[_] for _ in range(npars)])
+	return func_for_root
+
+
+
+
+def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False,rootfit=False):
+	"""performs a fit on xdata,ydata with xerr,yerr errors
+	assumes no covariance in x or y errors"""
+
+	if rootfit and not _has_ROOT:
+		raise ImportError("module ROOT required for rootfit functionality")
 
 	# get bounds into format expected
 	lo = [_[0] for _ in bounds]
 	hi = [_[1] for _ in bounds]
 
-	# scipy fit for parameter guess input to root fit
-	# no need for errors, as this is just used as a guess by root
-	popt, pcov = opt.curve_fit(func, xdata, ydata, p0, bounds=[lo,hi])
-	perr = np.sqrt(np.diag(pcov))
-	chisq = ((func(xdata,*popt)-ydata)/yerr)**2
-
-	# print("")
-	# print("SCIPY popt")
-	# print('\n'.join(["{:>10.2f}".format(_) for _ in popt]))
-	# print("")
-	# print("SCIPY perr")
-	# print('\n'.join(["{:>10.2f}".format(_) for _ in perr]))
-	# print("")
-	# print("SCIPY chisq: {:>10.2f}".format(chisq.sum()))
-	# print("")
-
-	# initialize TGraphErrors
-	n_points = len(xdata)
-	# print(n_points, xdata, ydata, xerr, yerr)
-	graph = ROOT.TGraphErrors(n_points, xdata, ydata, xerr, yerr)
-
-	# initialize and fit TF1
-	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
-	rf.SetParameters(*popt)
-	fitResult = graph.Fit(rf,"NS" if need_cov else "N")
-
-	# extract results
-	par = rf.GetParameters()
-	err = rf.GetParErrors()
-	popt_root = [par[_] for _ in range(len(p0))]
-	perr_root = [err[_] for _ in range(len(p0))]
-	chi2 = rf.GetChisquare()
-	ndof = rf.GetNDF()
-
-	results = (np.array(popt_root), np.array(perr_root), chi2, ndof)
-
-	if need_cov:
-		cov = fitResult.GetCovarianceMatrix()
-		nr = cov.GetNrows()
-		nc = cov.GetNcols()
-
-		cov_mtx_ptr = cov.GetMatrixArray()
-
-		cov_arr = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
-
-		results = results + (cov_arr, )
-
-	return results
-
-def fit_hist_with_root(
-		func,
-		xdata,
-		ydata,
-		bounds,
-		p0,
-		rfs,
-		need_cov=False,
-		skip_p0_improvement=False,
-		):
-	"""performs a root fit on xdata,ydata assuming poisson errors"""
-
-	# get bounds into format expected
-	lo = [_[0] for _ in bounds]
-	hi = [_[1] for _ in bounds]
-
-	# enfore p0 in bounds
+	# enforce p0 in bounds
 	for ip,p in enumerate(p0):
 		if p < lo[ip]:p0[ip]=lo[ip]
 		if p > hi[ip]:p0[ip]=hi[ip]
 
-	if skip_p0_improvement:
-		popt = np.array(p0)
+
+	if not ( (xerr is None) or (xerr is False) ):
+		pass
+
+		# is_fixed = [l==h for l,h in bounds]
+
+		# odr_data  = odr.RealData(xdata, ydata, xerr, yerr)
+		# odr_model = odr.Model(lambda beta,x:func(x,*beta))
+		# odr_inst  = odr.ODR(odr_data, odr_model, p0, maxit=500)#, None, is_fixed, np.zeros(xdata.shape))
+
+		# odr_inst.run()
+		# odr_out = odr_inst.output
+
+		# results = (odr_out.beta, np.sqrt(np.diag(odr_out.cov_beta)), odr_out.res_var, xdata.size - len(p0), )
+		# if need_cov:
+		# 	results = results + (odr_out.cov_beta, )
+		# return results
 
 	else:
-		# determined fixed parameters and exclude from fit
-		is_fixed = [l==h for l,h in bounds]
-		if any(is_fixed):
-			# for now, just use p0 in this case
-			# TODO use scipy fit in case of fixed parameters instead of defaulting to p0
-			# can make lambda which meshes dynamic and fixed parameters nicely
-			popt = np.array(p0)
+		xerr = np.zeros(xdata.shape)
 
-		else:
-			# scipy fit for parameter guess input to root fit
-			sigma = np.sqrt(ydata)
-			popt, pcov = opt.curve_fit(func, xdata, ydata, p0, sigma, True, bounds=[lo,hi])
-			perr = np.sqrt(np.diag(pcov))
 
-	# root object initialization and fit
-	rf = ROOT.TF1("multifit",rfs,0.0,1.0)
-	ndata = xdata.shape[0]
-	hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
-	for j in range(ndata):
-		hist.SetBinContent(j+1, ydata[j])
-	rf.SetParameters(popt)
-	for ip in range(len(lo)): # set bounds on root parameters
-		this_lo, this_hi = lo[ip], hi[ip]
-		if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
-		if this_hi ==  np.inf:this_hi= 1e7 # 
-		rf.SetParLimits(ip, this_lo, this_hi)
-	fitResult = hist.Fit(rf,"NS" if need_cov else "N")
-	par = rf.GetParameters()
-	err = rf.GetParErrors()
-	popt_root = [par[_] for _ in range(len(p0))]
-	perr_root = [err[_] for _ in range(len(p0))]
-	chi2 = rf.GetChisquare()
-	ndof = rf.GetNDF()
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0=p0, sigma=yerr, absolute_sigma=True, bounds=[lo,hi])
+	perr  = np.sqrt(np.diag(pcov))
+	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
+	ndof  = xdata.size - len(popt)
 
-	# if not skip_p0_improvement:
-	# 	print("SCIPY popt, root popt")
-	# 	print('\n'.join(["{:>10.2f} | {:>10.2f}".format(*_) for _ in zip(popt, popt_root)]))
-	# 	print("")
-	# 	print("SCIPY perr, root perr")
-	# 	print('\n'.join(["{:>10.2f} | {:>10.2f}".format(*_) for _ in zip(perr, perr_root)]))
-	# 	print("")
+	print("fit_graph")
+	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
 
-	results = (np.array(popt_root), np.array(perr_root), chi2, ndof)
+	# rootfit = True
+	if rootfit:
 
+		# wrap function for ROOT expected format
+		func_for_root = convert_func_for_root(func, npars=len(p0))
+
+		# create root TF1 (function) object
+		rf = ROOT.TF1("multifit",func_for_root,0.0,1.0,len(p0))
+		rf.SetParameters(*popt)
+
+		# create and populate TGraphErrors (graph) object
+		ndata = len(xdata)
+		graph = ROOT.TGraphErrors(
+			ndata,
+			np.array(xdata).astype(float),
+			np.array(ydata).astype(float),
+			np.array(xerr).astype(float),
+			np.array(yerr).astype(float)
+		)
+
+		# perform fit on TF1
+		fitResult = graph.Fit(rf,"NQS" if need_cov else "NQ")
+
+		# extract results
+		par = rf.GetParameters()
+		err = rf.GetParErrors()
+		popt  = [par[_] for _ in range(len(p0))]
+		perr  = [err[_] for _ in range(len(p0))]
+		chisq = rf.GetChisquare()
+		ndof  = rf.GetNDF()
+		if need_cov:
+			cov = fitResult.GetCovarianceMatrix()
+			nr = cov.GetNrows()
+			nc = cov.GetNcols()
+			cov_mtx_ptr = cov.GetMatrixArray()
+			pcov = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
+
+		print(FS_RESULT.format("root",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+	print("")
+
+
+	results = (popt, perr, chisq, ndof)
 	if need_cov:
-		cov = fitResult.GetCovarianceMatrix()
-		nr = cov.GetNrows()
-		nc = cov.GetNcols()
+		results = results + (pcov, )
+	return results
 
-		cov_mtx_ptr = cov.GetMatrixArray()
+	
 
-		cov_arr = np.array([cov_mtx_ptr[_] for _ in range(nr*nc)]).reshape(nr,nc)
+def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None,rootfit=False):
+	"""performs a fit on xdata,ydata assuming poisson errors on y and no errors on x"""
 
-		results = results + (cov_arr, )
+	if rootfit and not _has_ROOT:
+		raise ImportError("module ROOT required for rootfit functionality")
+
+	# get bounds into format expected
+	lo = [_[0] for _ in bounds]
+	hi = [_[1] for _ in bounds]
+
+	# enforce p0 in bounds
+	for ip,p in enumerate(p0):
+		if p < lo[ip]:p0[ip]=lo[ip]
+		if p > hi[ip]:p0[ip]=hi[ip]
+
+	is_fixed = [l==h for l,h in bounds]
+	assert not any(is_fixed)
+	# unsupported right now
+
+	# assume hist -> poisson errors on y
+	if yerr is None:
+		yerr = np.maximum(np.sqrt(ydata), 1)
+
+	popt, pcov = opt.curve_fit(func, xdata, ydata, p0=p0, sigma=yerr, absolute_sigma=True, bounds=[lo,hi])
+
+	perr  = np.sqrt(np.diag(pcov))
+	chisq = (((func(xdata,*popt)-ydata)/yerr)**2).sum()
+	# ndof  = xdata.size - len(popt)
+	ndof  = np.count_nonzero(ydata) - len(popt)
+
+	print("fit_hist")
+	print(FS_RESULT.format("scipy",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+
+
+	# rootfit = False
+	if rootfit:
+
+		# wrap function for ROOT expected format
+		func_for_root = convert_func_for_root(func, npars=len(p0))
+
+		# create root TF1 (function) object
+		rf = ROOT.TF1("multifit",func_for_root,0.0,1.0,len(p0))
+		rf.SetParameters(*popt)
+
+		# create and populate TH1F (histogram) object
+		ndata = xdata.shape[0]
+		hist = ROOT.TH1F("hist", "data to fit", ndata, xdata[0], xdata[-1])
+		for j in range(ndata):
+			hist.SetBinContent(j+1, ydata[j])
+		for ip in range(len(lo)): # set bounds on root parameters
+			this_lo, this_hi = lo[ip], hi[ip]
+			if this_lo == -np.inf:this_lo=-1e7 # 1e7 in place of inf
+			if this_hi ==  np.inf:this_hi= 1e7 # 
+			rf.SetParLimits(ip, this_lo, this_hi)
+
+		# do fit routine
+		fitResult = hist.Fit(rf,"NQS" if need_cov else "NQ")
+
+		# extract fit results and update local variables for return
+		par = rf.GetParameters()
+		err = rf.GetParErrors()
+		popt  = [par[_] for _ in range(len(p0))]
+		perr  = [err[_] for _ in range(len(p0))]
+		chisq = rf.GetChisquare()
+		ndof  = rf.GetNDF()
+
+		print(FS_RESULT.format("root",chisq,ndof,chisq/ndof,format_list(popt),format_list(perr)))
+	print("")
+
+
+	results = (popt, perr, chisq, ndof)
+	if need_cov:
+		results = results + (pcov, )
 
 	return results
+
 
 
 
@@ -190,9 +243,6 @@ class function_archetype(object):
 			
 			input_validation_function = None,
 			i_input_validation_function = None,
-			
-			root_function_template = None,
-			i_root_function_template = None,
 
 			jacobian = None,
 
@@ -221,9 +271,6 @@ class function_archetype(object):
 		self.input_validation_function   = input_validation_function
 		self.i_input_validation_function = i_input_validation_function
 
-		self.root_function_template   = root_function_template
-		self.i_root_function_template = i_root_function_template
-
 		# jacobian for y=f(x;*p) on variables {x, *p}
 		self.jacobian = jacobian
 
@@ -241,8 +288,6 @@ ERR_NO_I = "function {} has no inverse function defined"
 ERR_NO_GUESS  = "function {} has no parameter guess function defined"
 ERR_NO_VAL  = "function {} has no input validation function defined"
 ERR_NO_IVAL = "function {} has no inverse input validation function defined"
-ERR_NO_RFS  = "function {} has no root function template defined"
-ERR_NO_IRFS = "function {} has no inverse root function template defined"
 class model_single(object):
 	""""""
 
@@ -292,50 +337,13 @@ class model_single(object):
 	def guess(self, x, y):
 		return self.arch.parameter_guess_function(x,y,self.bounds)
 
-	def rfs_custom(self, x=None, p=None, needs_parens=True, inv=False):
-		template = self.arch.i_root_function_template if inv else self.arch.root_function_template
-		post_format = "({})" if needs_parens else "{}"
+	def fit(self, xdata, ydata, need_cov=False, p0=None, yerr=None, rootfit=False):
+		if p0 is None:
+			p0 = self.guess(xdata, ydata)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, yerr, rootfit=rootfit)
 
-		# case: x is None
-		if x is None:
-			x = "x"
-		
-		# case: p is None -> [0, npars)
-		if p is None:
-			p = range(self.npars)
-
-		# case: type(p) is int -> [p, p+npars)
-		if type(p) is int:
-			p = range(p, p+self.npars)
-
-		p_formatted = []
-		for par in p:
-			if type(par) is int:
-				p_raw = "[{}]".format(par)
-			else:
-				p_raw = par
-			p_formatted.append(post_format.format(p_raw))
-
-		return template.format(x=post_format.format(x), p=p_formatted)
-
-	def irfs_custom(self, x=None, p=None, needs_parens=True):
-		return self.rfs_custom(x, p, needs_parens, True)
-
-	def rfs(self, istart=0, inv=False):
-		template = self.arch.i_root_function_template if inv else self.arch.root_function_template
-		if istart is not None:
-			return template.format(x="x", p=["[{}]".format(_) for _ in range(istart,istart+self.npars)])
-		else:
-			return template.format(x="x", p=["[{{{}}}]".format(_) for _ in range(self.npars)])
-
-	def irfs(self, istart=0):
-		return self.rfs(istart, True)
-
-	def fit(self, xdata, ydata, need_cov=False):
-		return fit_hist_with_root(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
-
-	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
-		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False, rootfit=False):
+		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov, rootfit=rootfit)
 
 	def jacobian(self, x, *parameters):
 		if len(parameters) < self.npars:
@@ -413,63 +421,13 @@ class model_multiple(object):
 			p0 += c.guess(x,y)
 		return p0
 
-	def rfs_custom(self, x, p, needs_parens=True):
-		pieces = []
-		istart = 0
-		for ic,c in enumerate(self.components):
-			pieces.append(c.rfs_custom("{x}",["{{p[{}]}}".format(_) for _ in range(istart,istart+c.npars)],False))
-			istart += c.npars
-		template = " + ".join(pieces)
+	def fit(self, xdata, ydata, need_cov=False, p0=None, rootfit=False):
+		if p0 is None:
+			p0 = self.guess(xdata, ydata)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov, rootfit=rootfit)
 
-		post_format = "({})" if needs_parens else "{}"
-
-		# case: x is None
-		if x is None:
-			x = "x"
-		
-		# case: p is None -> [0, npars)
-		if p is None:
-			p = range(self.npars)
-
-		# case: type(p) is int -> [p, p+npars)
-		if type(p) is int:
-			p = range(p, p+self.npars)
-
-		p_formatted = []
-		for par in p:
-			if type(par) is int:
-				p_raw = "[{}]".format(par)
-			else:
-				p_raw = par
-			p_formatted.append(post_format.format(p_raw))
-
-		return template.format(x=post_format.format(x), p=p_formatted)
-
-	def irfs_custom(self, x, p):
-		raise ValueError(ERR_I_MULTI)
-
-	def rfs(self,istart=0):
-		pieces = []
-		if istart is not None:
-			for ic,c in enumerate(self.components):
-				pieces.append(c.rfs(istart))
-				istart += c.npars
-		else:
-			istart = 0
-			for ic,c in enumerate(self.components):
-				formatters = ["{"+str(_)+"}" for _ in range(istart,istart+c.npars)]
-				pieces.append(c.rfs(None).format(*formatters))
-				istart += c.npars
-		return ' + '.join(pieces)
-
-	def irfs(self,istart=0):
-		raise ValueError(ERR_I_MULTI)
-
-	def fit(self, xdata, ydata, need_cov=False):
-		return fit_hist_with_root(self.fn, xdata, ydata, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
-
-	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False):
-		return fit_graph_with_root(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), self.rfs(), need_cov)
+	def fit_with_errors(self, xdata, ydata, xerr, yerr, need_cov=False, rootfit=False):
+		return fit_graph(self.fn, xdata, ydata, xerr, yerr, self.bounds, self.guess(xdata,ydata), need_cov, rootfit=rootfit)
 
 
 
@@ -477,7 +435,7 @@ class model_multiple(object):
 class metamodel(object):
 	""""""
 
-	def __init__(self, m, xfp, xfp_rfs=None, xfx=False):
+	def __init__(self, m, xfp, xfx=False, bounds=None):
 		
 		# reference to model being transformed
 		# might not need to actually store this reference
@@ -487,15 +445,9 @@ class metamodel(object):
 		# one token per parameter that model m takes
 		self.xfp = xfp
 
-		# list of root function strings describing
-		# the dependence of each parameter p of model m
-		# on the parameters q of the metamodel.
-		# 
-		# entries are only accessed for user-defined functions
-		# and are auto-generated for all other cases.
-		# 
-		# can be None if no custom functions are being used
-		self.xfp_rfs = xfp_rfs
+		# bounds
+		# one list of [lo,hi] per metamodel parameter
+		self.bounds = bounds
 
 		# constant linear transformation of independent variable (x)
 		# used to constrain magnitude of numbers in fit routine
@@ -504,38 +456,6 @@ class metamodel(object):
 
 	def __call__(self, x, *q):
 		return self.fn(x, *q)
-
-	def rfs(self,needs_parens=True):
-		"""generate root function string"""
-
-		# transforming x is done before fitting since the transformation of x is constant
-		x = None
-
-		# entries in p correspond to parameters of m
-		# but [0] etc. refer to components of q, not p.
-		p = []
-
-		for i,token in enumerate(self.xfp):
-
-			# case: number -> str(token)
-			if type(token) in (int, float):
-				value = str(token)
-
-			# case: array a -> a dot "[0], [1], ... "
-			elif type(token) is np.ndarray:
-				value = "+".join(["[{}]".format(i) if val==1 else "[{}]*{}".format(i,val) for i,val in enumerate(token) if val])
-				if not value:
-					value = "0"
-
-			# case: function -> use value in xfp_rfs
-			else:
-				value = self.xfp_rfs[i]
-
-			p.append(value)
-
-		# return "+".join(p)
-		return self.m.rfs_custom(x=x,p=p,needs_parens=needs_parens)
-
 
 	def transform_parameters(self, q):
 		"""calculate parameters p for model m given parameters q"""
@@ -579,6 +499,10 @@ class metamodel(object):
 
 		return self.m(x, *p)
 
+	def fit(self, xdata, ydata, need_cov=False, p0=None):
+		assert (p0 is not None)
+		return fit_hist(self.fn, xdata, ydata, self.bounds, p0, need_cov)
+
 
 
 
@@ -614,10 +538,6 @@ exponential = function_archetype(
 	parameter_guess_function    = exp_guess,
 	input_validation_function   = None,
 	i_input_validation_function = lambda y,b,k:(y/b)>0,
-	root_function_template      = "{p[0]}*exp({p[1]}*{x})",
-	i_root_function_template    = "log({x}/{p[0]})/{p[1]}",
-	# root_function_template      = "[{0}]*exp([{1}]*x)",
-	# i_root_function_template    = "log(x/[{0}])/[{1}]",
 )
 exp = exponential
 
@@ -634,10 +554,6 @@ sqrt = function_archetype(
 	parameter_guess_function    = sqrt_guess,
 	input_validation_function   = lambda x,q,r:(r+x)>0,
 	i_input_validation_function = lambda y,q,r:y>0,
-	root_function_template      = "{p[0]}*sqrt({p[1]}+{x})",
-	i_root_function_template    = "(({x}/{p[0]})**2 - {p[1]})",
-	# i_root_function_template    = "[{0}]*sqrt([{1}]+x/{s[0]})",
-	# i_input_validation_function = "{s[0]}*((x/[{0}])**2 - [{1}])",
 )
 
 
@@ -664,8 +580,6 @@ suppressed_monomial = function_archetype(
 	parameter_guess_function    = suppressed_monomial_guess,
 	input_validation_function   = lambda x,xpeak,c,n:x>0,
 	i_input_validation_function = None,
-	root_function_template      = "{p[1]}*(({p[2]}*{x}/{p[0]})**{p[2]})*exp(-{p[2]}*{x}/{p[0]})",
-	i_root_function_template    = None,
 )
 smono = suppressed_monomial
 
@@ -679,8 +593,6 @@ constant = function_archetype(
 	parameter_guess_function    = lambda x,y,bounds:[y.mean()],
 	input_validation_function   = None,
 	i_input_validation_function = None,
-	root_function_template      = "{p[0]}",
-	i_root_function_template    = None,
 	jacobian = lambda x,c:np.array([0,1]),
 )
 poly0 = constant
@@ -702,8 +614,6 @@ line = function_archetype(
 	parameter_guess_function    = line_guess,
 	input_validation_function   = None,
 	i_input_validation_function = None,
-	root_function_template      = "{p[1]} + {p[0]}*{x}",
-	i_root_function_template    = "({x}-{p[1]})/{p[0]}",
 	jacobian = lambda x,a1,a0:np.array([a1,x,1]),
 )
 poly1 = line
@@ -723,8 +633,6 @@ quadratic = function_archetype(
 	parameter_guess_function    = quadratic_guess,
 	input_validation_function   = always_true,
 	i_input_validation_function = lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
-	root_function_template      = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
-	i_root_function_template    = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
 	jacobian = lambda x,a2,a1,a0:np.array([a1+2*x*a2,x**2,x,1]),
 )
 poly2 = quadratic
@@ -739,8 +647,6 @@ quadratic_inverse = function_archetype(
 	parameter_guess_function    = lambda x,y,bounds:quadratic_guess(y,x,bounds),
 	input_validation_function   = lambda y,a0,a1,a2:(y*a2) > (a0*a2-(a1**2)/4.0),
 	i_input_validation_function = always_true,
-	root_function_template      = "(-{p[1]} + sqrt({p[1]}**2 - 4*{p[0]}*({p[2]}-{x})))/(2*{p[0]})",
-	i_root_function_template    = "{p[2]} + {p[1]}*{x} + {p[0]}*{x}**2",
 )
 iquad = quadratic_inverse
 
@@ -755,8 +661,6 @@ powerlaw = function_archetype(
 	parameter_guess_function    = powerlaw_guess,
 	input_validation_function   = lambda x,b,m:x > 0,
 	i_input_validation_function = lambda y,b,m:y/b > 0,
-	root_function_template      = "{p[0]}*({x}**{p[1]})",
-	i_root_function_template    = "({x}/{p[0]})**(1/{p[1]})",
 )
 
 def powerlaw_plus_constant_guess(x,y,bounds):
@@ -770,10 +674,6 @@ powerlaw_plus_constant = function_archetype(
 	parameter_guess_function    = powerlaw_guess,
 	input_validation_function   = lambda x,b,m,c:x > 0,
 	i_input_validation_function = lambda y,b,m,c:(y-c)/b > 0,
-	root_function_template      = "{p[0]}*({x}**{p[1]})+{p[2]}",
-	i_root_function_template    = "(({x}-{p[2]})/{p[0]})**(1/{p[1]})",
-	# root_function_template      = "[{0}]*(x**[{1}])+[{2}]",
-	# i_root_function_template    = "((x-[{2}])/[{0}])**(1/[{1}])",
 )
 powc = powerlaw_plus_constant
 
@@ -797,13 +697,59 @@ gaussian = function_archetype(
 	parameter_guess_function    = gaussian_guess,
 	input_validation_function   = None,
 	i_input_validation_function = None,
-	root_function_template      = "{p[0]}*exp(-0.5*(({x}-{p[1]})/{p[2]})**2)",
-	i_root_function_template    = None,
 )
 gaus=gaussian
 norm=gaussian
 normal=gaussian
 
+def gaus2d(r,c,x0,y0,s1,s2,t):
+	"""2d gaussian with center (x0,y0) and free axes
+	r is a [2,m] array where x = r[0,...] and y = r[1,...]"""
+	xp = r[0,...] - x0
+	yp = r[1,...] - y0
+	xp2 = xp**2
+	yp2 = yp**2
+	xpyp = xp*yp
+	del xp
+	del yp
+
+	ct = math.cos(t)
+	st = math.sin(t)
+	ct2 = ct**2
+	st2 = st**2
+	ctst = ct*st
+
+	l1 = (xp2*ct2 + yp2*st2 + 2*xpyp*ctst) / (2*(s1**2))
+	l2 = (xp2*st2 + yp2*ct2 - 2*xpyp*ctst) / (2*(s2**2))
+	return np.exp(-l1-l2)*c
+
+def gaus2d_guess(r,counts,bounds):
+	
+	# just guess the midway between bounds, except guess zero for theta
+	# guess = [(_[0] + _[1])*0.5 for _ in bounds[:-1]] + [0.0]
+	
+	c = counts.max()
+	csum = np.sum(counts)
+	x0 = np.sum(r[0] * counts) / csum
+	y0 = np.sum(r[1] * counts) / csum
+	t = math.atan(abs(y0/x0)) if x0 else 0.0
+	s1 = ((x0*math.cos(t))**2 + (y0*math.sin(t))**2)**0.5
+	s2 = ((x0*math.sin(t))**2 + (y0*math.cos(t))**2)**0.5
+	guess = [c,x0,y0,s1,s2,t]
+
+	print("guess",guess)
+	return guess
+
+gaus2d = function_archetype(
+	name="2d gaussian",
+	formula="c*exp( -0.5*( ((x-x0,y-y0).(cos(t),sin(t))/s1)**2 + ((x-x0,y-y0).(-sin(t),cos(t))/s2)**2 ) )",
+	pnames=["c","x0","y0","s1","s2","t"],
+	model_function   = gaus2d,
+	i_model_function = None,
+	parameter_guess_function = gaus2d_guess,
+	input_validation_function   = None,
+	i_input_validation_function = None
+)
 
 
 

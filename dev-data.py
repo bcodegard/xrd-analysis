@@ -15,13 +15,47 @@ import utils.data   as data
 
 
 
+test_timestamp = True
+if test_timestamp:
 
-test_branch_manager = True
+	test_file = '../xrd-analysis/data/root/scintillator/Run4039.root'
+	branches = fileio.load_branches(test_file, {"timestamp_3046_1","area_3046_1","vMax_3046_1","tMax_3046_1","scaler_3046_1","area_3046_1","tMax_3046_2","scaler_3046_2"})
+	bm = data.BranchManager(branches, export_copies=False, import_copies=False, )
+
+	# bm.bud([data.convolve_branch("timestamp_3046_1",np.array([1,-1]),"deriv")])
+	bm.bud([data.differentiate_branch("timestamp_3046_1")])
+	t  = bm["timestamp_3046_1"][1:]
+	dt = bm["timestamp_3046_1_deriv"][1:]
+
+	bm.bud([data.fix_monotonic_timestamp(suffix="fix")])
+	bm.bud([data.differentiate_branch("timestamp_3046_1_fix")])
+
+	print(bm["timestamp_3046_1_fix"][:10])
+	print(bm["timestamp_3046_1_fix"][-10:])
+	print(bm["timestamp_3046_1_fix_deriv"][:10])
+	print(bm["timestamp_3046_1_fix_deriv"][-10:])
+
+	# plt.plot(bm["timestamp_3046_1"]    [1:], bm["timestamp_3046_1_deriv"]    [1:], 'r-', label="no fix")
+	# plt.plot(bm["timestamp_3046_1_fix"][1:], bm["timestamp_3046_1_fix_deriv"][1:], 'k-', label="fix applied")
+	# # plt.xlim(1646622238.9, 1646622239+3.1)
+	# # plt.ylim(0,0.035)
+	# plt.legend()
+	# plt.show()
+
+	bm.bud([data.count_passing(data.cut("timestamp_3046_1_deriv",10),"burst_index")])
+
+	plt.plot(bm["timestamp_3046_1_fix"][1:], bm["timestamp_3046_1_fix_deriv"][1:], 'k-', label="dt")
+	plt.plot(bm["timestamp_3046_1_fix"][1:], bm["burst_index"][1:], 'r.', label="batch index")
+	plt.xlabel("timestamp")
+	plt.legend()
+	plt.show()
+
+
+test_branch_manager = False
 if test_branch_manager:
 
 	test_file = '../xrd-analysis/data/root/scintillator/Run4039.root'
 	branches = fileio.load_branches(test_file, {"area_3046_1","vMax_3046_1","tMax_3046_1","scaler_3046_1","area_3046_1","tMax_3046_2","scaler_3046_2"})
-
 	bm = data.BranchManager(branches, export_copies=False, import_copies=False, )
 
 	print("look at properties")
@@ -37,7 +71,7 @@ if test_branch_manager:
 	print("overwrite scaler branches via convolving")
 	print(bm["scaler_3046_1"])
 	plt.hist(bm["scaler_3046_1"], bins=np.linspace(0,3000,100), histtype='step', log=True, color='k', label='raw')
-	bm.bud([data.rectify_scalers()],overwrite=True)
+	bm.bud([data.rectify_scaler()],overwrite=True)
 	bm.bud([data.convolve_branch("scaler_3046_1",12,"con")],overwrite=False)
 	print(bm["scaler_3046_1"])
 	plt.hist(bm["scaler_3046_1"]    , bins=np.linspace(0,3000,100), histtype='step', log=True, color='g', label='with rectification')
