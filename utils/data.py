@@ -15,6 +15,11 @@ import numpy as np
 
 # utility functions
 
+def invert_dictionary(dictionary):
+	"""Swaps all pairs of key:value into value:key
+	Does not check for uniqueness."""
+	return {v:k for k,v in dictionary.items()}
+
 def add_suffix(string,suffix):
 	"""if suffix, appends suffix to string with underscore. otherwise return it unchanged."""
 	if suffix is None:

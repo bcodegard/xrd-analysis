@@ -9,6 +9,7 @@ __version__ = "0.0"
 
 import math
 import itertools
+
 import numpy as np
 
 import matplotlib

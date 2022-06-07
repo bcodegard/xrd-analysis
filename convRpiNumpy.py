@@ -8,10 +8,8 @@ __version__ = "0.0"
 import os
 import sys
 import time
-import ROOT
-import uproot
 
-import awkward
+# import awkward
 import numpy as np
 import matplotlib.pyplot as plt
 

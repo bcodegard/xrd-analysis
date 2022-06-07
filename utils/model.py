@@ -7,12 +7,19 @@ __author__ = "Brunel Odegard"
 __version__ = "0.0"
 
 import math
-import ROOT
 import itertools
 import numpy as np
 
 import scipy.optimize as opt
 import scipy.odr as odr
+
+try:
+	import ROOT
+except:
+	_has_ROOT = False
+else:
+	_has_ROOT = True
+
 
 one_over_e = 1/math.e
 NO_BOUNDS = [-np.inf, np.inf]
@@ -45,6 +52,9 @@ def convert_func_for_root(func,npars):
 def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False,rootfit=False):
 	"""performs a fit on xdata,ydata with xerr,yerr errors
 	assumes no covariance in x or y errors"""
+
+	if rootfit and not _has_ROOT:
+		raise ImportError("module ROOT required for rootfit functionality")
 
 	# get bounds into format expected
 	lo = [_[0] for _ in bounds]
@@ -135,6 +145,9 @@ def fit_graph(func,xdata,ydata,xerr,yerr,bounds,p0,need_cov=False,rootfit=False)
 
 def fit_hist(func,xdata,ydata,bounds,p0,need_cov=False,yerr=None,rootfit=False):
 	"""performs a fit on xdata,ydata assuming poisson errors on y and no errors on x"""
+
+	if rootfit and not _has_ROOT:
+		raise ImportError("module ROOT required for rootfit functionality")
 
 	# get bounds into format expected
 	lo = [_[0] for _ in bounds]

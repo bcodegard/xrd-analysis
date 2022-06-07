@@ -9,9 +9,14 @@ __version__ = "0.0"
 
 import os
 import csv
-import uproot
 import numpy as np
 
+try:
+	import uproot
+except:
+	_has_uproot = False
+else:
+	_has_uproot = True
 
 
 
@@ -160,6 +165,9 @@ def update_csv(file, new_rows, typelist, n_match_exact, tolerate_missing=True, b
 
 def get_keys(rootfile, rootkey=None):
 	"""gets a list of all branch names (keys) for specified root file and top level rootkey"""
+
+	if not _has_uproot:
+		raise ImportError("function fileio.get_keys requires module uproot, which could not be imported.")
 	
 	# open root file and get list of branch names (keys)
 	with uproot.open(rootfile) as root_obj:
@@ -186,6 +194,9 @@ def branch_to_array(branch, key=False, dtype=float):
 
 def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 	"""loads branches specified in <which> from <rootfile>. loads all if <which> is empty"""
+
+	if not _has_uproot:
+		raise ImportError("function fileio.load_branches requires module uproot, which could not be imported.")
 
 	# allows single branch to be specified as string instead of set
 	if type(which) is str:

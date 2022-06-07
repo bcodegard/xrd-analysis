@@ -6,7 +6,7 @@ __version__ = "0.1"
 
 import math
 import numpy as np
-import scipy.optimize    as opt
+import scipy.optimize as opt
 
 
 
