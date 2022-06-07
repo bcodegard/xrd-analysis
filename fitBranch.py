@@ -18,12 +18,15 @@ import matplotlib.pyplot as plt
 import utils.fileio  as fileio
 import utils.display as display
 import utils.model   as model
+import utils.data    as data
+import utils.cli     as cli
 
 
 
 
 # filesystem locations
 # todo: use os.sep to support multiple platforms
+DATA_DIR   = "../xrd-analysis/data/root/scintillator"
 DATA_LOC   = "../xrd-analysis/data/root/scintillator/Run{}.root"
 CALIB_LOC  = "./data/calibration/{}.csv"
 FIG_LOC    = "./figs/{}.png"
@@ -55,13 +58,13 @@ SMONO_DEFAULTS = [3,-np.inf,np.inf,0,np.inf]
 
 # how many places past decimal point to show for display purposes
 # does not affect precision of saved information
-DISPLAY_PRECISION = 3
+DISPLAY_PRECISION = 5
 
 # list of parameters corresponding to the locations of peaks
 PEAK_PARAMETERS = ["mu", "xpeak"]
 
 # display string templates
-FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}\n{rfs}"
+FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}"
 FIGURE_TITLE_NOFIT = "run {run}, {branch}"
 
 # csv file type lists
@@ -73,40 +76,6 @@ XF_CSV_TYPELIST  = [str, int, float]
 
 # utility functions
 # todo: some of these should be moved into a utils module since many scripts will need the functionality
-def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimiter=None,allow_blank=False):
-	"""split string by delimiter and cast to list with defaults and types"""
-
-	# list/tuple of strings -> individual calls per entry
-	if type(s) in [list, tuple]:
-		return [split_with_defaults(_,defaults,types,delimiter,name_delimiter,allow_blank) for _ in s]
-
-	# single string
-	else:
-		result = []
-		
-		if name_delimiter is not None:
-			if name_delimiter in s:
-				name,_,s = s.rpartition(name_delimiter)
-			else:
-				name=""
-
-		parts = s.split(delimiter)
-		for i,part in enumerate(parts):
-			if part or allow_blank:
-				if types:
-					result.append(types[i](part))
-				else:
-					result.append(part)
-			else:
-				result.append(defaults[i])
-
-		result = result + defaults[len(result):]
-
-		if name_delimiter is not None:
-			result = [name] + result
-
-		return result
-
 def bin_count_from_ndata(ndata):
 	nraw = math.ceil(BIN_COUNT_MULT * math.sqrt(ndata))
 	return max([BIN_COUNT_MIN, nraw])
@@ -144,7 +113,58 @@ def csv_format_cuts(cuts):
 	# return cut_branches, cut_bounds
 	return cut_flat
 
+def edges_lin(xmin, xmax, nbins):
+	return np.linspace(xmin, xmax, nbins+1)
 
+def edges_log(xmin, xmax, nbins):
+	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
+
+def edges_symlog(xmin, xmax, nbins, l=1):
+	slxmin = symlog(xmin, l)
+	slxmax = symlog(xmax, l)
+	y = np.linspace(slxmin, slxmax, nbins+1)
+	return isymlog(y, l)
+
+def symlog(x, l):
+
+	isscalar = np.isscalar(x)
+	x = np.atleast_1d(x)
+
+	y = np.zeros(x.shape)
+	
+	ftr_pos = (x >  l)
+	ftr_neg = (x < -l)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+	
+	b=math.e/l
+	y[ftr_pos] =  np.log( b*x[ftr_pos])
+	y[ftr_neg] = -np.log(-b*x[ftr_neg])
+	y[ftr_lin] = x[ftr_lin] * (b/math.e)
+	
+	if isscalar:
+		return y[0]
+	else:
+		return y
+
+def isymlog(y, l):
+	
+	isscalar = np.isscalar(y)
+	y = np.atleast_1d(y)
+
+	x = np.zeros(y.shape)
+
+	ftr_pos = (y >  1)
+	ftr_neg = (y < -1)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+
+	x[ftr_pos] =  np.exp( y[ftr_pos] - 1)
+	x[ftr_neg] = -np.exp(-y[ftr_neg] - 1)
+	x[ftr_lin] = y[ftr_lin]
+
+	if isscalar:
+		return x[0] * l
+	else:
+		return x * l
 
 
 # analysis stages
@@ -158,27 +178,47 @@ def extract_arguments(args):
 	"""extract and prrocess command line arguments"""
 
 	# run
+	# try to interpret as integer -> numeric file in default location
 	try:
 		run_id = int(args["run"])
 		run = DATA_LOC.format(run_id)
+	# not an integer
 	except:
 		run = args["run"]
+
+		# no extension -> .root
 		if not (run.endswith(EXT_ROOT) or run.endswith(EXT_NPZ)):
 			run += EXT_ROOT
-		which_ext = '.'+run.rpartition('.')[2]
-		run_id = int(run.rpartition(os.sep)[2].partition(which_ext)[0][3:])
+
+		# no sep -> default location
+		if os.sep not in run:
+			run = os.sep.join([DATA_DIR, run])
+
+		# extract file name and extension
+		name, _, ext = run.rpartition(os.sep)[2].rpartition('.')
+
+		# try to extract number from name
+		try:
+			if name.lower().startswith("run"):
+				run_id = int(name[3:])
+			else:
+				run_id = -1
+		except:
+			run_id = -1
 		# todo: better extraction of run#. Will fail if filename format changes.
 		# could also switch to using full filename instead of ID in calibration entries.
 
+	print(run, run_id)
+
 	# fit
-	fits = [split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
+	fits = [data.split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
 	fit = fits[0]
 
 	# --cut
 	if args["cut"] is None:
 		cuts = []
 	else:
-		cuts = split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
+		cuts = data.split_with_defaults(args["cut"], [None,-np.inf,np.inf,"and"], [str,float,float,str])
 
 	# --er
 	event_range = args["event_range"]
@@ -188,12 +228,15 @@ def extract_arguments(args):
 	#      or have list of branches to convolve if specified
 	convolve = args["convolve"]
 
-	# --model
-	if args["model"] is None:
-		model_id = -1
+	# --model, --model_explicit
+	if not (args["model"] is None):
+		model_id, model_cal_file = data.split_with_defaults(args["model"],[-1,None],[int,str])
+	elif args["model_explicit"]:
+		model_id = args["model_explicit"][0]
 		model_cal_file = None
 	else:
-		model_id, model_cal_file = split_with_defaults(args["model"],[-1,None],[int,str])
+		model_id = -1
+		model_cal_file = None
 
 	# -r
 	raw_bounds = args["raw_bounds"]
@@ -208,13 +251,13 @@ def extract_arguments(args):
 	if args["gaus"] is None:
 		gaus = []
 	else:
-		gaus = split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
+		gaus = data.split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
 
 	# --s
 	if args["smono"] is None:
 		smono = []
 	else:
-		smono = split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
+		smono = data.split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
 
 	# --rs
 	ref_spec = args["rs"]
@@ -286,7 +329,7 @@ def extract_arguments(args):
 # get calibration and apply model
 # calculate and apply filters
 # finish with final data to analyse, and concise info for display and log
-def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds):
+def procure_data(args,verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds):
 	# load data
 	branches_needed = {fit[0]}
 	branches_needed |= {_[0] for _ in cuts}
@@ -362,32 +405,44 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 	# if not raw_bounds, convert bounds from specified transformed values into raw values
 	if model_id != -1:
 
+
 		# create model to use
 		this_model = model.models_by_id[model_id]()
 
-		# load entries from model_cal_file
-		calibration_entries = fileio.load_calibration(model_cal_file)
-		print(model_cal_file)
-		print(calibration_entries)
 
-		# todo: get voltage from run. currently ignoring voltage.
-		# get best calibration for fit branch
-		ibc_fit,bc_fit = fileio.get_best_calibration(
-			calibration_entries,
-			# fit[0],
-			None, # ignore branch
-			None, # ignore voltage
-			run_id,
-			model_id,
-			ard=True,
-			)
+		# model params specified explicitly by --me
+		if model_cal_file is None:
+			bc_fit = [
+				args["model_explicit"][1],
+				args["model_explicit"][2:2+this_model.npars],
+				args["model_explicit"][2+this_model.npars:2+this_model.npars*2],
+			]
 
-		# bc_fit[1] = bc_fit[1][2::-1] + bc_fit[1][3:]
-		# bc_fit[2] = bc_fit[2][2::-1] + bc_fit[2][3:]
-		
-		# error if no matching calibration found
-		if ibc_fit == -1:
-			raise ValueError(ERR_NO_VALID_CALIBRATION.format(model_cal_file,model_id,fit[0]))
+
+		# model params in file specified by --m
+		else:
+			# load entries from model_cal_file
+			calibration_entries = fileio.load_calibration(model_cal_file)
+			print(model_cal_file)
+			print(calibration_entries)
+
+			# todo: get voltage from run. currently ignoring voltage.
+			# get best calibration for fit branch
+			ibc_fit,bc_fit = fileio.get_best_calibration(
+				calibration_entries,
+				# fit[0],
+				None, # ignore branch
+				None, # ignore voltage
+				run_id,
+				model_id,
+				ard=True,
+				)
+			
+			# error if no matching calibration found
+			if ibc_fit == -1:
+				raise ValueError(ERR_NO_VALID_CALIBRATION.format(model_cal_file,model_id,fit[0]))
+
+
 		if verbosity:
 			print("calibration found for fit branch")
 			print("model {}".format(model_id))
@@ -558,7 +613,7 @@ def procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,mod
 # parse fit function components and compose fit function
 # fit the fit function to binned fit_data
 # acquire parameters' best fit and errors
-def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
+def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 
 	# unpack vars
 	background,gaus,smono,nbins,ref_spec,ref_xf = vars_fit
@@ -591,10 +646,12 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 	edgeHi = fit_data.max() if fit_bounds[1] ==  np.inf else fit_bounds[1]
 	# if xlog argument supplied at least twice, bins are calculated in log space.
 	# warning: fitting to log bins has not been confirmed to be accurate.
-	if xlog>1:
-		edges = np.logspace(math.log(edgeLo,10),math.log(edgeHi,10),nbins+1)
+	if args["xsymlog"]:
+		edges = edges_symlog(edgeLo, edgeHi, nbins, args["xsymlog"])
+	elif xlog>1:
+		edges = edges_log(edgeLo, edgeHi, nbins)
 	else:
-		edges = np.linspace(edgeLo, edgeHi, nbins + 1)
+		edges = edges_lin(edgeLo, edgeHi, nbins)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	# TODO: better handling of density: should be display-only, not at data level.
 	if density:
@@ -782,7 +839,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		# display reference model and meta model parameter info
 		if verbosity>1:
 			print("reference model parameters (p)")
-			line_template = "{:>8} | {:<32} | {:<32.32s} | {:<32.32s}"
+			line_template = "{:>8} | {:<32} | {:<32.4s} | {:<32.4s}"
 			print(line_template.format("pname", "reference spectrum bounds", "xfp_rfs", "xfp"))
 			print(line_template.format(" ", " ", " ", " "))
 			for ip,p in enumerate(fit_model.pnames):
@@ -793,10 +850,6 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 			print(line_template.format(" ", " ", " ", " "))
 			for iq,q in enumerate(qnames):
 				print(line_template.format(str(q), str(qbounds[iq]), str(q0[iq]), ""))
-			print("")
-
-			print("meta model root function string, full")
-			print(meta.rfs(False))
 			print("")
 
 		# # test metamodel integrity
@@ -812,7 +865,6 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 			counts,
 			qbounds,
 			q0,
-			meta.rfs(False),
 			True
 			)
 
@@ -823,7 +875,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 
 		# print results
 		if verbosity:
-			line_template = "{:>8} | {:>10} | {:>10} | {:>12} | {:>12}"
+			line_template = "{:>8} | {:>12} | {:>12} | {:>24} | {:>24}"
 			print("")
 			print("meta model performance: chi2/ndof = {}/{} = {}".format(
 				round(chi2,DISPLAY_PRECISION),
@@ -902,7 +954,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		# add suppressed monomials
 		smono_bounds = []
 		for ism,sm in enumerate(smono):
-			this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0],sm[0]]]
+			this_bounds = [[sm[1],sm[2]],[sm[3],sm[4]],[sm[0]-1,sm[0]+1]]
 			smono_bounds.append(this_bounds)
 			order = int(sm[0]) if int(sm[0]) == sm[0] else sm[0]
 			fit_model_components.append(model.smono(this_bounds))
@@ -922,7 +974,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 		# fit the binned data
 		popt, perr, chi2, ndof, pcov = fit_model.fit(midpoints, counts, need_cov = True)
 		if verbosity:
-			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>10}| {:>10}"
+			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>14}| {:>14}"
 			print("")
 			print("model performance: chi2/ndof = {}/{} = {}".format(
 				round(chi2,DISPLAY_PRECISION),
@@ -977,7 +1029,7 @@ def perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density):
 # TODO split this functionality up into two parts
 #      a function to display fit data and results,
 #      and the save functionality handled by the class instance
-def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
+def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors):
 	
 	run,run_id,fits,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds = vars_data
 	background,gaus,smono,nbins,ref_spec,ref_xf                                      = vars_fit
@@ -1047,7 +1099,6 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 				run=run_id,
 				branch=fit[0],
 				chi2=chi2/ndof if ndof else 0.0,
-				rfs=fit_model.rfs() if fit_model else "undef",
 			))
 		else:
 			plt.title(FIGURE_TITLE_NOFIT.format(
@@ -1060,12 +1111,24 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		plt.ylabel("counts")
 		
 		# apply axis scaling
-		if xlog:
+		if args["xsymlog"]:
+			plt.xscale("symlog",linthresh=args["xsymlog"], linscale=1/math.e)
+		elif xlog:
 			plt.xscale("log")
-		if ylog:
+
+		if args["ysymlog"]:
+			plt.yscale("symlog",linthresh=args["ysymlog"], linscale=1/math.e)
+		elif ylog:
 			plt.yscale("log")
 
-		
+
+		# set figure size
+		if args["figsize"]:
+			fig = plt.gcf()
+			fig.set_size_inches(*args["figsize"][1:])
+			fig.set_dpi(args["figsize"][0])
+
+
 	# save the figure if specified
 	if fig_out:
 		
@@ -1075,8 +1138,9 @@ def display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_
 		else:
 			fig_file = fig_out
 
+
 		# save the figure to an image file
-		plt.savefig(fig_file)
+		plt.savefig(fig_file, dpi = args["figsize"][0] if args["figsize"] else None)
 
 	# show the figure if requested
 	if show:
@@ -1210,28 +1274,84 @@ def main(args, suspend_show=False, colors={}):
 		cuts_all = cuts + [_ + ['and'] for _ in fits]
 
 		# fetch each datasets
-		pData = [procure_data(verbosity,run,run_id,_,cuts_all,event_range,convolve,model_id,model_cal_file,raw_bounds) for _ in fits]
+		pData = [procure_data(args,verbosity,run,run_id,_,cuts_all,event_range,convolve,model_id,model_cal_file,raw_bounds) for _ in fits]
 		pLo = [_.min() if fits[i][1] == -np.inf else fits[i][1] for i,_ in enumerate(pData)]
 		pHi = [_.max() if fits[i][2] ==  np.inf else fits[i][2] for i,_ in enumerate(pData)]
 
 		if not nbins:
 			nbins = 50
-		if xlog>1:
-			pBins = [np.logspace(math.log(min((pLo[i]),(pData[i][pData[i]>0]).min()),10), math.log(pHi[i],10), nbins+1) for i in range(n_ds)]
+		if args["xsymlog"]:
+			pBins = [edges_symlog(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins, args["xsymlog"]) for i in range(n_ds)]
+		elif xlog>1:
+			pBins = [edges_log(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins) for i in range(n_ds)]
 		else:
-			pBins = [np.linspace(pLo[i], pHi[i], nbins+1) for i in range(n_ds)]
+			pBins = [edges_lin(pLo[i], pHi[i], nbins) for i in range(n_ds)]
 
-		display.pairs2d(
+		gs = display.pairs2d(
 			pData,
 			pBins,
-			[xlog]*n_ds,
+			[args["xsymlog"] if args["xsymlog"] else bool(xlog)]*n_ds,
 			[_[0] for _ in fits],
 			cmap="afmhot",
 			cbad="grey",
 			norm="log" if ylog else None,
 		)
 
+		# fit 2d gaussian(s) to 2d data. only supported for single comparison (2 fit variables.)
+		if args["gaus2d"]:
+			assert len(fits) == 2
+
+			xdata, ydata = pData
+			xbins, ybins = pBins
+			xmids = (xbins[1:] + xbins[:-1])*0.5
+			ymids = (ybins[1:] + ybins[:-1])*0.5
+
+			counts, xedges, yedges = np.histogram2d(
+				xdata,ydata,
+				[np.array(xbins),np.array(ybins)],
+			)
+
+			x2d,y2d = np.meshgrid(xmids, ymids, indexing='ij')
+			xyflat = np.stack([x2d.flatten(),y2d.flatten()],axis=0)
+			countsflat = counts.flatten()
+
+			fit_model = model.gaus2d(zip(args["gaus2d"][0][0::2],args["gaus2d"][0][1::2]))
+			for bounds in args["gaus2d"][1:]:
+				fit_model = fit_model + model.gaus2d(zip(bounds[0::2],bounds[1::2]))
+
+			popt, perr, chi2, ndof = fit_model.fit(xyflat,countsflat)
+			print(popt)
+			print(perr)
+			print(chi2)
+			print(ndof)
+
+			const,x0,y0,s1,s2,theta = popt
+			x1,y1 = x0+s1*math.cos(theta), y0+s1*math.sin(theta)
+			x2,y2 = x0-s2*math.sin(theta), y0+s2*math.cos(theta)
+
+			# display center and axes
+			plt.subplot(gs[1,0])
+			plt.plot([x1,x0,x2],[y1,y0,y2],'b-')
+
+			# projections
+			copt = fit_model(xyflat, *popt).reshape((nbins,nbins))
+			cxopt = copt.sum(axis=1)
+			cyopt = copt.sum(axis=0)
+
+			plt.subplot(gs[0,0])
+			plt.plot(xmids, cxopt, color="r", ls='--', marker='.')
+			plt.subplot(gs[1,1])
+			plt.plot(cyopt, ymids, color="r", ls='--', marker='.')
+
+
+
+
 		plt.suptitle("{}: {}\n{}".format(run, fits, cuts))
+
+		if args["figsize"]:
+			fig = plt.gcf()
+			fig.set_size_inches(*args["figsize"][1:])
+			fig.set_dpi(args["figsize"][0])
 
 		# save the figure if specified
 		if fig_out:
@@ -1243,7 +1363,7 @@ def main(args, suspend_show=False, colors={}):
 				fig_file = fig_out
 
 			# save the figure to an image file
-			plt.savefig(fig_file)
+			plt.savefig(fig_file, dpi = args["figsize"][0] if args["figsize"] else None)
 
 		if show:
 			plt.show()
@@ -1251,13 +1371,13 @@ def main(args, suspend_show=False, colors={}):
 
 	else:
 		# stage 1: data
-		fit_data = procure_data(verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
+		fit_data = procure_data(args,verbosity,run,run_id,fit,cuts,event_range,convolve,model_id,model_cal_file,raw_bounds)
 
 		# stage 2: fit
-		bin_data, model_data, fit_results = perform_fit(verbosity,fit_data,fit,vars_fit,xlog,density)
+		bin_data, model_data, fit_results = perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density)
 
 		# stage 3: display and output
-		display_and_write(verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
+		display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
 
 
 
@@ -1276,15 +1396,36 @@ if __name__ == '__main__':
 	parser.add_argument("fit"  ,type=str,nargs="+",help="branch to fit: branch,min,max")
 	parser.add_argument("--cut",type=str,action='append',help="branch to cut on: branch,min,max")
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
-	parser.add_argument("--m"  ,type=str,dest="model",help="model to use: model_id,calibration_file")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
 	parser.add_argument("--con",type=int,default=[0],nargs="+",dest="convolve",help="scaler convolution (default none); kernel_size [, type]")
+
+	parser.add_argument("--m",type=str,dest="model",help="model to use: model_id,calibration_file")
+	parser.add_argument(
+		"--me",
+		type=str,
+		nargs="+",
+		dest="model_explicit",
+		action=cli.MergeAction,
+		const=((int, float), (0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0)),
+		default=(),
+		help="explicitly provide model info: ID, max dev, *params, *param errors",
+	)
 
 	# fitting arguments
 	parser.add_argument("--bins",type=int,default=0,dest="nbins",help="number of bins to use")
 	parser.add_argument("--bg"  ,type=str,default="",dest="background",help="background function: any combination of (p)ower (e)xp (c)onstant (l)ine (q)uadratic")
 	parser.add_argument("--g"   ,type=str,action='append',dest="gaus" ,help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
 	parser.add_argument("--s"   ,type=str,action='append',dest='smono',help="suppressed monomial: order, min,max xpeak, min,max c, min,max k")
+	parser.add_argument(
+		"--g2",
+		type=str,
+		nargs="+",
+		dest="gaus2d",
+		action=cli.MergeAppendAction,
+		const=((float,),(0,np.inf,-np.inf,np.inf,-np.inf,np.inf,0,np.inf,0,np.inf,0,math.pi/2)),
+		default=[],
+		help="2d gaussian"
+	)	
 
 	# if --rs is not emtpy, fit to reference
 	# get all fit info from reference spectrum
@@ -1304,9 +1445,22 @@ if __name__ == '__main__':
 	parser.add_argument("--label" ,type=str,default="",dest='label',help="custom label")
 	parser.add_argument("--fill"  ,type=float,default=0.0,dest='fill',help="fill under histograms")
 
+	parser.add_argument("--xs",dest="xsymlog",type=float,default=None,help="sets x axis of figure to symmetric log scale")
+	parser.add_argument("--ys",dest="ysymlog",type=float,default=None,help="sets y axis of figure to symmetric log scale")
+
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig"  ,type=str,default="",help="location to save figure as png image (overwrites if file exists)")
+	parser.add_argument(
+		"--fig-size", "--fs",
+		dest="figsize",
+		type=str,
+		nargs="+", 
+		action=cli.MergeAction,
+		const=((int,float,float),(100,6.4,4.8)),
+		default=None,
+		help="figure size x y or x -> (x,x)"
+	)
 	parser.add_argument("--xfout",type=str,default="",help="location to save transformation as csv file (appends if file exists)")
 	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
 
@@ -1326,6 +1480,7 @@ if __name__ == '__main__':
 		# current argument set being constructed
 		this_set = []
 
+		# print(sys.argv)
 		# iterate through argv
 		for a in sys.argv[1:]:
 
@@ -1333,6 +1488,7 @@ if __name__ == '__main__':
 			if a == ARG_MULTI:
 
 				# add current set to list of complete sets
+				# print(this_set)
 				arg_sets.append(this_set)
 
 				# reset current set

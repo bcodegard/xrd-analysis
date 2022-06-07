@@ -7,14 +7,18 @@ __author__ = "Brunel Odegard"
 __version__ = "0.0"
 
 
-
-
+import math
 import numpy as np
 
 
 
 
 # utility functions
+
+def invert_dictionary(dictionary):
+	"""Swaps all pairs of key:value into value:key
+	Does not check for uniqueness."""
+	return {v:k for k,v in dictionary.items()}
 
 def add_suffix(string,suffix):
 	"""if suffix, appends suffix to string with underscore. otherwise return it unchanged."""
@@ -23,11 +27,84 @@ def add_suffix(string,suffix):
 	else:
 		return "{}_{}".format(string, suffix)
 
+AP_DELIMITER = ","
+def split_with_defaults(s,defaults,types=None,delimiter=AP_DELIMITER,name_delimiter=None,allow_blank=False):
+	"""split string by delimiter and cast to list with defaults and types"""
+
+	# list/tuple of strings -> individual calls per entry
+	if type(s) in [list, tuple]:
+		return [split_with_defaults(_,defaults,types,delimiter,name_delimiter,allow_blank) for _ in s]
+
+	# single string
+	else:
+		result = []
+		
+		if name_delimiter is not None:
+			if name_delimiter in s:
+				name,_,s = s.rpartition(name_delimiter)
+			else:
+				name=""
+
+		parts = s.split(delimiter)
+		for i,part in enumerate(parts):
+			if part or allow_blank:
+				if types:
+					result.append(types[i](part))
+				else:
+					result.append(part)
+			else:
+				result.append(defaults[i])
+
+		result = result + defaults[len(result):]
+
+		if name_delimiter is not None:
+			result = [name] + result
+
+		return result
+
+def edges_lin(xmin, xmax, nbins):
+	return np.linspace(xmin, xmax, nbins+1)
+
+def edges_equal_count(nbins, xdata, xmin, xmax):
+	xdata = xdata[np.logical_and(xdata>xmin, xdata<xmax)]
+	count = xdata.size
+	return np.interp(
+		np.linspace(0,count,nbins+1),
+		np.arange(count),
+		np.sort(xdata),
+	)
+
+def edges_log(xmin, xmax, nbins):
+	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
+
+def edges_symlog(xmin, xmax, nbins, l=1):
+	slxmin = symlog(xmin, l)
+	slxmax = symlog(xmax, l)
+	y = np.linspace(slxmin, slxmax, nbins+1)
+	return isymlog(y, l)
+
+def bin_count_from_ndata(ndata, mult=4.0, minimum=50):
+	"""nbins proportional to sqrt(ndata), with minimum"""
+	nraw = math.ceil(mult * math.sqrt(ndata))
+	return max([minimum, nraw])
+
 
 
 
 # data processing algorithms
 # for internal and external use
+
+def chi2_identical_poisson(a,b):
+	"""calculate reduced chi2 for the hypothesis that pairs of elements
+	from a and b are drawn from identical poisson distributions"""
+	
+	# exclude points where a and b are both zero
+	ftr_valid = (a>0)|(b>0)
+	av = a[ftr_valid]
+	bv = b[ftr_valid]
+
+	# return chi2, ndof
+	return (((av-bv)**2)/(av+bv)).sum(), ftr_valid.sum()
 
 def rectify(array, radius):
 	"""raises values if they are lower than all their neighbors"""
@@ -35,10 +112,78 @@ def rectify(array, radius):
 	max_r = np.stack([np.roll(array, _) for _ in range(1      , radius+1)],axis=0).max(0)
 	return np.maximum(array, np.minimum(max_l, max_r))
 
+def fix_monotonic(array, round_to=0, copy=True):
+	"""fixes inversions in array, which is supposed to be monotonic"""
+	anomalies = array[1:] < array[:-1]
+	differentials = array[:-1][anomalies] - array[1:][anomalies]
+	if not (round_to is None):
+		differentials = np.round(differentials, round_to)
+	if copy:
+		new_array = array.copy()
+	else:
+		new_array = array
+	new_array[1:][anomalies] += differentials
+	return new_array
+
+def symlog(x, l):
+
+	isscalar = np.isscalar(x)
+	x = np.atleast_1d(x)
+
+	y = np.zeros(x.shape)
+	
+	ftr_pos = (x >  l)
+	ftr_neg = (x < -l)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+	
+	b=math.e/l
+	y[ftr_pos] =  np.log( b*x[ftr_pos])
+	y[ftr_neg] = -np.log(-b*x[ftr_neg])
+	y[ftr_lin] = x[ftr_lin] * (b/math.e)
+	
+	if isscalar:
+		return y[0]
+	else:
+		return y
+
+def isymlog(y, l):
+	
+	isscalar = np.isscalar(y)
+	y = np.atleast_1d(y)
+
+	x = np.zeros(y.shape)
+
+	ftr_pos = (y >  1)
+	ftr_neg = (y < -1)
+	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
+
+	x[ftr_pos] =  np.exp( y[ftr_pos] - 1)
+	x[ftr_neg] = -np.exp(-y[ftr_neg] - 1)
+	x[ftr_lin] = y[ftr_lin]
+
+	if isscalar:
+		return x[0] * l
+	else:
+		return x * l
+
+def inrange(arr, lo, hi, lclosed=False, rclosed=False):
+	pieces = []
+	if lo not in [None, -np.inf]:
+		pieces.append(arr>=lo if lclosed else arr>lo)
+	if hi not in [None, np.inf]:
+		pieces.append(arr<=hi if rclosed else arr<hi)
+	if len(pieces) == 1:
+		return pieces[0]
+	else:
+		return np.logical_and(*pieces)
+
 
 
 
 # Accessor base class and subclasses
+# Currently, no Accessor class except the base class is implemented.
+# To create a new Accessor, sublass the Accessor class and overwrite the
+# Accessor.get method to interface with your data.
 
 class Accessor(object):
 	"""base class for Accessor types"""
@@ -46,6 +191,8 @@ class Accessor(object):
 		pass
 	def __nonzero__(self):
 		return True
+	def get(self, key_or_keys):
+		return False
 
 # class RootFileAccessor(Accessor):
 # 	"""Accessor object for loading branches as needed from root file"""
@@ -103,6 +250,9 @@ class BranchManager(object):
 		# False: raise Error
 		self.tolerate_missing = tolerate_missing
 
+	def __len__(self):
+		test_key = list(self.keys)[0]
+		return self._get(test_key).shape[0]
 
 	def __getitem__(self, key_or_keys):
 		"""official method of external access to branches. allows for copying to protect original data."""
@@ -201,6 +351,10 @@ class BranchManager(object):
 	def bud(self, buds=[], keep=True, overwrite=False):
 		"""create new branch(es)"""
 		
+		# single bud -> list
+		if type(buds) not in (set, list, tuple):
+			buds=[buds]
+
 		# create dict of new branches
 		new_branches = {}
 		
@@ -262,15 +416,32 @@ class BranchManager(object):
 			return masked_branches[key_or_keys]
 		# set: dict of key:branch
 		elif type(key_or_keys) is set:
-			return {key:value for key,value in masked_branches if key in key_or_keys}
+			return {key:value for key,value in masked_branches.items() if key in key_or_keys}
 		# other iterable: list of branches in order they appear in key_or_keys
 		else:
-			return [mask_branches[_] for _ in key_or_keys]
+			return [masked_branches[_] for _ in key_or_keys]
 
 
 
 
 # built-in mask methods
+
+def mask_range(lo=0,hi=np.inf):
+	"""convenient and computationally efficient method for selecting literal range in data
+	does not cut on "entry" branch; rather, cuts on index of arrays first axes
+	which will be different if any cuts have previously been applied"""
+	def mask(manager):
+		lo_enf = max([lo,0])
+		hi_enf = min([hi,len(manager)])
+		pieces = []
+		if lo_enf > 0:
+			pieces.append(np.zeros(lo_enf))
+		if hi_enf > lo_enf:
+			pieces.append(np.ones(hi_enf-lo_enf))
+		if hi_enf < len(manager):
+			pieces.append(np.zeros(len(manager)-hi_enf))
+		return np.concatenate(pieces).astype(bool)
+	return mask
 
 def mask_all(*masks):
 	"""logical_all of masks"""
@@ -298,6 +469,19 @@ def cut(branch, lo=-np.inf, hi=np.inf):
 
 # built-in bud methods
 
+def bud_function(input_branch, output_branch, callable, args=[], kwargs={}):
+	"""callable(input_branch, *args, **kwargs) -> output_branch"""
+	def bud(manager):
+		return {output_branch:callable(manager[input_branch], *args, **kwargs)}
+	return bud
+
+def differentiate_branch(branch, suffix="deriv"):
+	"""calculates difference between each entry and the previous
+	first entry in the new branch is difference between first and last entries in the input"""
+	def bud(manager):
+		return {add_suffix(branch,suffix):manager[branch]-np.roll(manager[branch],1)}
+	return bud
+
 def convolve_branch(branch, kernel, suffix=None):
 	"""convolve a branch with a kernel. integerl kernel will be converted to normalized flat kernel."""
 	if type(kernel) is int:
@@ -312,11 +496,42 @@ def rectify_branch(branch, radius, suffix=None):
 		return {add_suffix(branch,suffix):rectify(manager[branch],radius)}
 	return bud
 
-def rectify_scalers(radius=12, suffix=None, match="scaler_"):
+def rectify_scaler(radius=12, suffix=None, match="scaler_"):
 	"""apply recfification to all branches whose name starts with "scaler_" (or different string if specified.)"""
 	def bud(manager):
 		return {add_suffix(_,suffix):rectify(manager[_],radius) for _ in manager.keys if _.startswith(match)}
 	return bud
 
+def fix_monotonic_branch(branch, suffix):
+	"""fixes instances where value of branch is smaller than that of previous entry"""
+	def bud(manager):
+		return {add_suffix(branch,suffix):rectify(manager[branch],radius)}
+	return bud
 
+def fix_monotonic_timestamp(suffix=None, match="timestamp_"):
+	"""apply monotonic fix to all branches starting with "timestamp_" (or different string if specified)"""
+	def bud(manager):
+		return {add_suffix(_,suffix):fix_monotonic(manager[_]) for _ in manager.keys if _.startswith(match)}
+	return bud
+
+def count_passing(mask,new_key):
+	"""returns a branch with an integer index tracking how many events up to this point passed the mask"""
+	def bud(manager):
+		passing = mask(manager)
+		return {new_key:np.cumsum(passing)}
+	return bud
+
+def subtract_first(branch,suffix=None):
+	def bud(manager):
+		return {add_suffix(branch,suffix):manager[branch]-manager[branch][0]}
+	return bud
+
+def localize_timestamp(suffix=None, match="timestamp_"):
+	"""subtract first entry from all branches starting with "timestamp_" (or different string if specified)"""
+	def bud(manager):
+		return {add_suffix(_,suffix):manager[_]-manager[_][0] for _ in manager.keys if _.startswith(match)}
+	return bud
+
+def bud_entry(manager):
+	return {"entry":np.arange(len(manager))}
 

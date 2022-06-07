@@ -9,6 +9,7 @@ __version__ = "0.0"
 
 import math
 import itertools
+
 import numpy as np
 
 import matplotlib
@@ -103,6 +104,8 @@ def pairs2d(
 	if show:
 		plt.show()
 
+	return gs
+
 def display2d(
 
 		xdata, ydata,
@@ -185,16 +188,20 @@ def display2d(
 	axpx = plt.subplot(gs[0])
 	axpx.hist(xdata, xbins, density, histtype='step', align='mid', orientation='vertical', log=True, color='k')
 	axpx.sharex(ax2d)
-	if xlog:
+	if xlog is True:
 		axpx.set_xscale("log")
+	elif xlog:
+		axpx.set_xscale("symlog", linthresh=xlog, linscale=1/math.e)
 	axpx.tick_params(axis="x", labelbottom=False)
 
 	# y projection hist
 	axpy = plt.subplot(gs[3])
 	axpy.hist(ydata, ybins, density, histtype='step', align='mid', orientation='horizontal', log=True, color='k')
 	axpy.sharey(ax2d)
-	if ylog:
+	if ylog is True:
 		axpy.set_yscale("log")
+	elif ylog:
+		axpy.set_yscale("symlog", linthresh=ylog, linscale=1/math.e)
 	axpy.tick_params(axis="y", labelleft=False)
 
 	if show:

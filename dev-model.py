@@ -33,6 +33,49 @@ if test_fitting:
 
 	print("test_fitting finished without errors")
 
+test_odr_fitting = True
+if test_odr_fitting:
+
+	test_model = model.line() + model.exponential()
+
+	# true_par = np.array([8.0, -12.5])#, 0.3, 2.25])
+	true_par = np.array([8.0, -2.5, 41.0, -1.00])
+	# true_x   = np.array([2.0, 2.25, 2.325, 2.6, 3.4, 3.6, 3.75, 3.76, 4.1, 4.8, 5.8, 7.5])
+	true_x = np.random.uniform(0.0, 9.0, 10)
+	true_y   = test_model(true_x, *true_par)
+
+	# gaussian errors with sigma propto sqrt(size)
+	co_x = 0.05
+	co_y = 0.03
+	obs_x = true_x + np.random.normal(0.0, np.ones(true_x.shape) * co_x)
+	obs_y = true_y + np.random.normal(0.0, np.sqrt(true_y) * co_y)
+	est_xerr = np.ones(obs_x.shape) * co_x
+	est_yerr = np.sqrt(obs_y) * co_y
+
+	xaxis = np.linspace(0.0, 9.0, 500)
+	plt.errorbar(obs_x, obs_y, est_yerr, est_xerr, 'r.', label='observation')
+
+	plt.plot(xaxis, test_model(xaxis, *true_par), color='k', ls='-', marker='')
+	plt.plot(true_x, true_y, color='k', ls='', marker='.', label='truth')
+	
+	# bounds = [[0,20], [-50,50]]#, [0,1], [1,4]]
+	bounds = [[0,20], [-50,50], [0,100], [-1,-1]]
+	popt, perr, rc2, ndof = model.fit_graph(test_model, obs_x, obs_y, est_xerr, est_yerr, bounds, true_par)
+
+	print(popt)
+	print(perr)
+	print(rc2)
+	print(ndof)
+
+	plt.plot(xaxis, test_model(xaxis, *popt), color='darkred', ls='--', marker='', label='odr result')
+	plt.title("\nchi2/ndof = {:.2f}/{} = {:.2f}".format(rc2*ndof, ndof, rc2))
+
+	plt.legend()
+	plt.show()
+
+
+
+
 test_multiple_functions = False
 if test_multiple_functions:
 
@@ -162,7 +205,7 @@ if test_individual_functions:
 
 	print("test_individual_functions finished without errors")
 
-test_metamodel = True
+test_metamodel = False
 if test_metamodel:
 
 	e = model.exponential()
@@ -180,7 +223,6 @@ if test_metamodel:
 
 	print(meta.rfs())
 	print(meta(1, 2, 3))
-
 
 print("all enabled tests finished without errors")
 sys.exit(0)
