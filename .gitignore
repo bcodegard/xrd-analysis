@@ -12,6 +12,11 @@ __pycache__/
 *.npz
 *.pickle
 
+# data and figure directories
+data/*
+figs/*
+temp/*
+
 # C extensions
 *.so
 
