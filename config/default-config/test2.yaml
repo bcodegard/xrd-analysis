@@ -1,0 +1,12 @@
+test: 2
+recursive_test:
+  thing_1: 4
+  thing_2: 21
+  thing_3: 7
+  again:
+    thing_a: "baked beans are off!"
+    thing_b: "spam spam spam spam"
+    thing_c: "sausages"
+  again_2:
+    include: True
+    exclude: False

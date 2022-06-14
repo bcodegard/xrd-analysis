@@ -1,0 +1,26 @@
+# where scripts will look for data files if they are specified as just
+# a filename, rather than a full path
+# E.G. "run.root" vs "./data/run.root"
+# 
+# lists will be joined by os.sep to enable cross-platform use
+# 
+# "{base}" in strings will be replaced, via .format(), with the value
+# acquired for the base directory location. directories that start with
+# this are defined relative to the base directory, even if it moves.
+data_directory:
+  base: [".","data"]
+  sub:
+    calibration: ["{base}", "calibration"]
+    exp        : ["{base}", "exp"        ]
+    fits       : ["{base}", "fits"       ]
+    root       : ["{base}", "root"       ]
+    rpi        : ["{base}", "rpi"        ]
+    sim        : ["{base}", "sim"        ]
+    spectra    : ["{base}", "spectra"    ]
+    xf         : ["{base}", "xf"         ]
+
+# where figures should be saved if not specified as a full path
+figure_directory:
+  base: [".", "figs"]
+  sub:
+    temp: ["{base}", "temp"]

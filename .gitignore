@@ -22,6 +22,9 @@ data/*
 figs/*
 temp/*
 
+# non-default config files
+config/*.yaml
+
 # C extensions
 *.so
 

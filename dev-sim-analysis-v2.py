@@ -98,11 +98,11 @@ RUNS_EXP_SRC = {
 RUNS_EXP_BG = [4225, 4226]
 
 # data directories and files
-DIR_SIM_SRC = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/sim"
+DIR_SIM_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/sim"
 # DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator"
 # DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator"
-DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/exp"
-DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis-refactor/data/exp"
+DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/exp"
+DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/exp"
 
 FILENAME_SIM_SRC = "{src}.npz"
 FILENAME_SIM_SRC_BY = {
@@ -1417,9 +1417,9 @@ def main():
 	# sys.exit(0)
 
 	# ch_fit = CH_COMP
-	# ch_fit = [1]
+	ch_fit = [1]
 	# ch_fit = [2,3]
-	ch_fit = [1,2,3]
+	# ch_fit = [1,2,3]
 
 	for ch in ch_fit:
 		rtn.setup_model(ch)
@@ -1466,7 +1466,7 @@ def main():
 				plt.xlabel('area (nVs)')
 				plt.show()
 
-		save_spectra = True
+		save_spectra = False
 		if save_spectra:
 
 			arrays = {}

@@ -1,0 +1,7 @@
+test: 1
+recursive_test:
+  thing_1: 3
+  thing_2: 9
+  again:
+    thing_a: "baked beans"
+    thing_b: "spam"
