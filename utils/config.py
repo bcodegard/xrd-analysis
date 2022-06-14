@@ -122,13 +122,17 @@ def _copy_default_if_missing(files, dir_config, dir_default_config, verbosity=1)
 # the "main" function of this module
 # this is the only one that external scripts should call.
 
-def load(file_or_files="common", dir_config=None, dir_default_config=None, verbosity=1):
+def load(*file_or_files, dir_config=None, dir_default_config=None, verbosity=1):
 	"""Load one or more configuration files. If more than one, priority
 	for overlapping fields is given to the earliest specified entry.
 	
 	File names cannot be full directories. load a config file from a
 	direcotry other than the hard-coded one, specify it for dir_config.
 	"""
+
+	# no config files specified -> just load common
+	if not file_or_files:
+		file_or_files = ["common"]
 
 	# set directories if not specified
 	if dir_config is None:

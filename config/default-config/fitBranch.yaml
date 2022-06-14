@@ -1,0 +1,44 @@
+# this is the config file for the script fitBranch.py
+
+
+# parameters for automatic bin count calculation
+# bin count will be bin_count_mult*sqrt(n_data),
+# or bin_count_min if the former is less than it.
+bin_count_mult: 4.0
+bin_count_min: 50
+
+
+# how many sifnificant figures to show when printing
+# numerical values, if not specified individually.
+max_display_precision: 5
+
+
+# figure title used when there is a fit performed
+# use python string formatting syntax to include variables
+# recognized variables:
+# run    - run number or file used
+# branch - branch being fit
+# ndof   - number of degrees of freedom in fit
+# chi2   - chi squared for the fit result
+# rchi2  - reduced chi squared, =chi2/ndof
+figure_title: "run #{run}, {branch}, chi2/dof={rchi2}"
+
+
+# same format as for figure_title
+# recognized variables:
+# run    - run number or file used
+# branch - branch being fit
+figure_title_nofit: "run #{run}, {branch}"
+
+
+# Default DPI and dimensions for figures (used when the --figsize
+# argument is not given.)
+figure_dpi: 120
+figure_width_inches: 6.4
+figure_height_inches: 4.8
+
+
+# Sequence of colors to go through when plotting multiple lines
+# without color specified. Entries can be any object that matplotlib
+# recognizes as a color.
+color_sequence: ["k","m","b","r","c","y",'tab:brown','darkred','magenta']

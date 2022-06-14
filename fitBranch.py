@@ -20,56 +20,43 @@ import utils.display as display
 import utils.model   as model
 import utils.data    as data
 import utils.cli     as cli
+import utils.config  as config
 
 
 
 
-# filesystem locations
-# todo: use os.sep to support multiple platforms
-DATA_DIR   = "../xrd-analysis/data/root/scintillator"
-DATA_LOC   = "../xrd-analysis/data/root/scintillator/Run{}.root"
-CALIB_LOC  = "./data/calibration/{}.csv"
-FIG_LOC    = "./figs/{}.png"
-RESULT_LOC = "./data/fits/{}.csv"
-RS_LOC     = "./data/fits/{}.csv" # for now, reference spectra are not separate from general fit results.
-XF_LOC     = "./data/xf/{}.csv"
+# These are static globals that are not configurable.
+# All static globlals that are configurable have been moved to
+# configuration files.
 
-# known file extensions
+# file extensions
 EXT_ROOT = ".root"
 EXT_CSV  = ".csv"
 EXT_PNG  = ".png"
 EXT_NPZ  = ".npz"
 
-# delimiters for argparse
-AP_DELIMITER = ","
-AN_DELIMITER = "="
+# list of parameters corresponding to the locations of peaks
+PEAK_PARAMETERS = ["mu", "xpeak"]
 
 # error message templates
 ERR_NO_VALID_CALIBRATION = "No matching calibration entry found in file {} for id {} and branch {}"
 ERR_NO_FIT_MODEL = "Fit model is empty. Need to specify at least one function (background, gaussian, etc."
 
-# multiplier and minumum for aturomatic bin count calculation
-BIN_COUNT_MULT = 4.0
-BIN_COUNT_MIN = 50
-
 # mu low,hi; sigma lo,hi; A lo,hi
 GAUS_DEFAULTS  = [-np.inf,np.inf,0.0,np.inf,0.0,np.inf]
 SMONO_DEFAULTS = [3,-np.inf,np.inf,0,np.inf]
 
-# how many places past decimal point to show for display purposes
-# does not affect precision of saved information
-DISPLAY_PRECISION = 5
-
-# list of parameters corresponding to the locations of peaks
-PEAK_PARAMETERS = ["mu", "xpeak"]
-
-# display string templates
-FIGURE_TITLE = "run {run}, {branch}, chi2/dof={chi2:.2f}"
-FIGURE_TITLE_NOFIT = "run {run}, {branch}"
-
 # csv file type lists
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
 XF_CSV_TYPELIST  = [str, int, float]
+
+# delimiters for argparse
+AP_DELIMITER = ","
+AN_DELIMITER = "="
+
+# argument for separating independent fit specifications to be plotted
+# on the same axes
+ARG_MULTI = "AND"
 
 
 
@@ -1095,10 +1082,13 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 			plt.ylim(top=ylim)
 
 		if not (popt is False):
+			rchi2 = (chi2/ndof) if ndof else -1
 			plt.title(FIGURE_TITLE.format(
 				run=run_id,
 				branch=fit[0],
-				chi2=chi2/ndof if ndof else 0.0,
+				ndof=ndof,
+				chi2=round(chi2,DISPLAY_PRECISION),
+				rchi2=round(rchi2,DISPLAY_PRECISION),
 			))
 		else:
 			plt.title(FIGURE_TITLE_NOFIT.format(
@@ -1384,6 +1374,78 @@ def main(args, suspend_show=False, colors={}):
 
 if __name__ == '__main__':
 
+	# initial implementation of config handling
+	# todo: system that catches when expected fields are missing instead
+	# 
+	#       of using cfg.get(value, default)
+	#       Want to be able to warn when fields are missing, including
+	#       when the default config has been updated to include new
+	#       fields.
+	# 
+	#       In this case, we'd warn the user that fields are missing, and
+	#       take their values from the default-config (without copying it?)
+	# 
+	#       This might be best handled by automatically comparing with the
+	#       default config file even when it's not being copied. or by having
+	#       each script communicate which keys it expects, or by implementing
+	#       a class with a method for missing keys.
+
+	# load config from files (returns a dict)
+	cfg = config.load("fitBranch", "common")
+
+
+	# filesystem locations
+	# 
+	# base location (the "data" folder, or equivalent)
+	DATA_DIR_BASE = os.sep.join(cfg["data_directory"]["base"])
+	# 
+	# was [".", "data", "scint-experiment", "root"]
+	DATA_DIR   = os.sep.join(cfg["data_directory"]["scint_exp_root"]).format(base = DATA_DIR_BASE)
+	DATA_LOC   = os.sep.join([DATA_DIR, "Run{}.root"])
+	# 
+	# was [".", "data", "calibration", "{}.csv"]
+	CALIB_DIR  = os.sep.join(cfg["data_directory"]["calibration"]).format(base = DATA_DIR_BASE)
+	CALIB_LOC  = os.sep.join([CALIB_DIR, "{}.csv"])
+	# 
+	# was [".", "data", "fits", "{}.csv"]
+	RESULT_DIR = os.sep.join(cfg["data_directory"]["fits"]).format(base = DATA_DIR_BASE)
+	RESULT_LOC = os.sep.join([RESULT_DIR, "{}.csv"])
+	# 
+	# was [".", "data", "fits", "{}.csv"]
+	RS_DIR = os.sep.join(cfg["data_directory"]["fits"]).format(base = DATA_DIR_BASE)
+	RS_LOC = os.sep.join([RS_DIR, "{}.csv"])
+	# 
+	# was [".", "data", "xf", "{}.csv"]
+	XF_DIR = os.sep.join(cfg["data_directory"]["xf"]).format(base = DATA_DIR_BASE)
+	XF_LOC = os.sep.join([XF_DIR, "{}.csv"])
+	# 
+	# was [".", "figs", "{}.png"]
+	FIG_DIR = os.sep.join(cfg["figure_directory"]["base"])
+	FIG_LOC = os.sep.join([FIG_DIR, "{}.png"])
+
+
+	# multiplier and minumum for automatic bin count calculation
+	BIN_COUNT_MULT = cfg["bin_count_mult"]
+	BIN_COUNT_MIN  = cfg["bin_count_min" ]
+
+	# how many places past decimal point to show for display purposes
+	# does not affect precision of saved information
+	DISPLAY_PRECISION = cfg["max_display_precision"]
+
+	# display string templates
+	FIGURE_TITLE       = cfg["figure_title"      ]
+	FIGURE_TITLE_NOFIT = cfg["figure_title_nofit"]
+
+	# default dpi and size for figures
+	FIG_DPI      = cfg["figure_dpi"]
+	FIG_W_INCHES = cfg["figure_width_inches"]
+	FIG_H_INCHES = cfg["figure_height_inches"]
+
+	# was ["k","m","b","r","c","y",'tab:brown','darkred','magenta']
+	COLOR_SEQ = cfg["color_sequence"]
+
+	
+
 	parser = argparse.ArgumentParser(
 		description="fit a model to a binned branch, optionally transforming and cutting",
 		)
@@ -1451,20 +1513,21 @@ if __name__ == '__main__':
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig"  ,type=str,default="",help="location to save figure as png image (overwrites if file exists)")
+	FIGSIZE_DEFAULT = (FIG_DPI, FIG_W_INCHES, FIG_H_INCHES)
 	parser.add_argument(
 		"--fig-size", "--fs",
 		dest="figsize",
 		type=str,
 		nargs="+", 
 		action=cli.MergeAction,
-		const=((int,float,float),(100,6.4,4.8)),
-		default=None,
+		const=((int,float,float),FIGSIZE_DEFAULT),
+		default=FIGSIZE_DEFAULT,
 		help="figure size x y or x -> (x,x)"
 	)
 	parser.add_argument("--xfout",type=str,default="",help="location to save transformation as csv file (appends if file exists)")
 	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
 
-	ARG_MULTI = "AND"
+
 
 	# indicates multiple argument sets -> multiple plots, put on same plot
 	if ARG_MULTI in sys.argv:
@@ -1501,9 +1564,6 @@ if __name__ == '__main__':
 
 		# add last set to list of complete sets
 		arg_sets.append(this_set)
-
-
-		COLOR_SEQ = ["k","m","b","r","c","y",'tab:brown','darkred','magenta']
 		
 		# call main with each set of arguments in turn,
 		# additionally communicating that each call is

@@ -1,3 +1,8 @@
+# Config file shared between many scripts.
+# Contains things such as the default directories in which to look for
+# input files or save output files.
+
+
 # where scripts will look for data files if they are specified as just
 # a filename, rather than a full path
 # E.G. "run.root" vs "./data/run.root"
@@ -9,18 +14,23 @@
 # this are defined relative to the base directory, even if it moves.
 data_directory:
   base: [".","data"]
-  sub:
-    calibration: ["{base}", "calibration"]
-    exp        : ["{base}", "exp"        ]
-    fits       : ["{base}", "fits"       ]
-    root       : ["{base}", "root"       ]
-    rpi        : ["{base}", "rpi"        ]
-    sim        : ["{base}", "sim"        ]
-    spectra    : ["{base}", "spectra"    ]
-    xf         : ["{base}", "xf"         ]
+
+  rpi_txt: ["{base}", "rpi", "txt"]
+  rpi_np : ["{base}", "rpi", "np"]
+  scint_sim_root: ["{base}", "scint-simulation", "root"]
+  scint_sim_np  : ["{base}", "scint-simulation", "np"  ]
+  scint_exp_root: ["{base}", "scint-experiment", "root"]
+  scint_exp_np  : ["{base}", "scint-experiment", "np"  ]
+  
+  calibration: ["{base}", "calibration"]
+  exp        : ["{base}", "exp"        ]
+  fits       : ["{base}", "fits"       ]
+  spectra    : ["{base}", "spectra"    ]
+  xf         : ["{base}", "xf"         ]
+
 
 # where figures should be saved if not specified as a full path
 figure_directory:
   base: [".", "figs"]
-  sub:
-    temp: ["{base}", "temp"]
+
+  temp: ["{base}", "temp"]
