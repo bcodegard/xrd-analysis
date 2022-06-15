@@ -9,8 +9,34 @@ import argparse
 
 
 
+def infer_dest(option_string, prefix_chars='-'):
+	return option_string.lstrip(prefix_chars).replace('-','_')
+
+
 
 # custom argparse.Action action classes and associated objects
+
+class MultipleDestAction(argparse.Action):
+	def __init__(self, option_strings, dest, **kwargs):
+		if isinstance(dest, str):
+			raise ValueError("MultipleDestAction requirest iterable of strings for dest")
+		else:
+			true_dest = infer_dest(option_strings[0])
+			self.separate_dests = dest
+		super(MultipleDestAction, self).__init__(option_strings, true_dest, **kwargs)
+		
+	def __call__(self, parser, namespace, values, option_string=None):
+		setattr(namespace, self.dest, values)
+		value_ignore='.'
+		for ival,val in enumerate(values):
+			if val == value_ignore:
+				continue
+			setattr(
+				namespace,
+				self.separate_dests[ival],
+				self.const[ival](val),
+			)
+
 
 class MergeAction(argparse.Action):
 	"""casts values using callables in const[0]

@@ -43,8 +43,8 @@ ERR_NO_VALID_CALIBRATION = "No matching calibration entry found in file {} for i
 ERR_NO_FIT_MODEL = "Fit model is empty. Need to specify at least one function (background, gaussian, etc."
 
 # mu low,hi; sigma lo,hi; A lo,hi
-GAUS_DEFAULTS  = [-np.inf,np.inf,0.0,np.inf,0.0,np.inf]
-SMONO_DEFAULTS = [3,-np.inf,np.inf,0,np.inf]
+GAUS_DEFAULTS  = ("",-np.inf,np.inf,0.0,np.inf,0.0,np.inf)
+SMONO_DEFAULTS = (3,-np.inf,np.inf,0,np.inf)
 
 # csv file type lists
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
@@ -195,8 +195,6 @@ def extract_arguments(args):
 		# todo: better extraction of run#. Will fail if filename format changes.
 		# could also switch to using full filename instead of ID in calibration entries.
 
-	print(run, run_id)
-
 	# fit
 	fits = [data.split_with_defaults(_, [None,-np.inf,np.inf], [str,float,float]) for _ in args["fit"]]
 	fit = fits[0]
@@ -235,16 +233,10 @@ def extract_arguments(args):
 	background = args["background"]
 
 	# --g
-	if args["gaus"] is None:
-		gaus = []
-	else:
-		gaus = data.split_with_defaults(args["gaus"],GAUS_DEFAULTS,[float]*6,name_delimiter=AN_DELIMITER)
+	gaus = args["gaus"]
 
 	# --s
-	if args["smono"] is None:
-		smono = []
-	else:
-		smono = data.split_with_defaults(args["smono"],SMONO_DEFAULTS,[float]+[float]*6)
+	smono = args["smono"]
 
 	# --rs
 	ref_spec = args["rs"]
@@ -271,7 +263,7 @@ def extract_arguments(args):
 	# print raw and processed args if verbosity >= 2
 	if verbosity >= 2:
 		print("unprocessed args")
-		for key,value in args.items():
+		for key,value in sorted(args.items(), key=lambda kv:kv[0]):
 			print(key,value)
 		print("\nprocessed args")
 		print("run        : {}".format(run))
@@ -1026,8 +1018,11 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 	smono_bounds, n_bg_parameters, fit_model    = model_data
 	popt, perr, chi2, ndof, cov, xf_cov, xf_par = fit_results
 
+	no_fit = (popt is False) or (popt is None)
+	has_fit = not no_fit
+	
 	label_suffix="{}".format(label) if label else ""
-	if not (popt is False):
+	if has_fit:
 		label_suffix = ", {}".format(label_suffix)
 
 	# if showing or saving the figure, we need to compose it
@@ -1035,16 +1030,16 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 
 		# display data
 		if "d" in disp:
-			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if not (popt is False) else "",label_suffix))
+			plt.step(midpoints, counts, where='mid', color=colors.get("d","k"), label="{}{}".format("data" if has_fit else "",label_suffix))
 			if fill:
 				plt.fill_between(midpoints,counts,step='mid',alpha=fill,color=colors.get("d","k"))
 
 		# display root result
-		if ("r" in disp) and not (popt is False):
+		if ("r" in disp) and has_fit:
 			plt.plot(midpoints, fit_model(midpoints,*popt), "g-", label="fit{}".format(label_suffix))
 
 		# display peaks
-		if ("p" in disp) and not (popt is False):
+		if ("p" in disp) and has_fit:
 			first_peak = True
 			for ip,p in enumerate(fit_model.pnames):
 				if p in PEAK_PARAMETERS:
@@ -1081,14 +1076,14 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 		if ylim is not None:
 			plt.ylim(top=ylim)
 
-		if not (popt is False):
+		if has_fit:
 			rchi2 = (chi2/ndof) if ndof else -1
 			plt.title(FIGURE_TITLE.format(
 				run=run_id,
 				branch=fit[0],
 				ndof=ndof,
-				chi2=round(chi2,DISPLAY_PRECISION),
-				rchi2=round(rchi2,DISPLAY_PRECISION),
+				chi2=round(chi2,DISPLAY_PRECISION) if chi2 else "undef",
+				rchi2=round(rchi2,DISPLAY_PRECISION) if rchi2 else "undef",
 			))
 		else:
 			plt.title(FIGURE_TITLE_NOFIT.format(
@@ -1112,11 +1107,13 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 			plt.yscale("log")
 
 
-		# set figure size
-		if args["figsize"]:
-			fig = plt.gcf()
-			fig.set_size_inches(*args["figsize"][1:])
-			fig.set_dpi(args["figsize"][0])
+		# set figure size	
+		fig = plt.gcf()
+		fig.set_size_inches(
+			args.get("figure_width_inches" ),
+			args.get("figure_height_inches"),
+		)
+		fig.set_dpi(args.get("figure_dpi"))
 
 
 	# save the figure if specified
@@ -1130,7 +1127,7 @@ def display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data
 
 
 		# save the figure to an image file
-		plt.savefig(fig_file, dpi = args["figsize"][0] if args["figsize"] else None)
+		plt.savefig(fig_file, dpi = args["figure_dpi"] if args["figure_dpi"] else None)
 
 	# show the figure if requested
 	if show:
@@ -1338,10 +1335,13 @@ def main(args, suspend_show=False, colors={}):
 
 		plt.suptitle("{}: {}\n{}".format(run, fits, cuts))
 
-		if args["figsize"]:
-			fig = plt.gcf()
-			fig.set_size_inches(*args["figsize"][1:])
-			fig.set_dpi(args["figsize"][0])
+		# set figure size	
+		fig = plt.gcf()
+		fig.set_size_inches(
+			args.get("figure_width_inches" ),
+			args.get("figure_height_inches"),
+		)
+		fig.set_dpi(args.get("figure_dpi"))
 
 		# save the figure if specified
 		if fig_out:
@@ -1353,7 +1353,7 @@ def main(args, suspend_show=False, colors={}):
 				fig_file = fig_out
 
 			# save the figure to an image file
-			plt.savefig(fig_file, dpi = args["figsize"][0] if args["figsize"] else None)
+			plt.savefig(fig_file, dpi = args["figure_dpi"] if args["figure_dpi"] else None)
 
 		if show:
 			plt.show()
@@ -1389,6 +1389,41 @@ if __name__ == '__main__':
 	#       default config file even when it's not being copied. or by having
 	#       each script communicate which keys it expects, or by implementing
 	#       a class with a method for missing keys.
+
+	# todo: process cgf stuff within main() call
+	#       and do ?(config.deep_merge(args, cfg))? inside main
+	#       
+	#       that way, we can use the same priority structure for cli arguments
+	#       as for configuration, granted that variables names and formats are consistent.
+	# 
+	#       some thought should be given to how to implement arguments that take
+	#       multiple parameters for convenience, such as --figsize dpi w h
+	#       We want to be able to specify them as such, rather than needing three
+	#       separate arguments, but we also want the configuration file to have them
+	#       separately, rather then as a list.
+	# 
+	#       maybe a custom action which writes each specified value to a different variable
+	#       E.G. dest=["figure_dpi", "figure_w_inches", "figure_h_inches"]
+	#       Actually, just extending the __call__ attribute of the actions defined in utils.cli
+	#       to handle the case where dest is a list, and distribute values (setting or appending
+	#       or changing, based on the action behavior.)
+	# 
+	#       It's also worth figuring out how to handle more complicated actions, and
+	#       how to avoid overwriting stuff (E.G. specifying a cut in the config tile,
+	#       but it gets ignored if any cuts are specified via arguments.)
+	# 
+	#       perhaps the merge could be done before processing arguments?
+	#
+	# 
+	#       I basically do want to merge argparse's output with the config contents,
+	#       but with a couple of caveats:
+	#       1) Some arguments have specific actions when the key is present in both,
+	#          rather than simply overwriting (if not dict) or merging (if dict.) These
+	#          would include concatenating lists for MergeAction and similar.
+	#       2) Some arguments should not accept input from config file, though this is
+	#          pretty optional. It could get confusing if there are things like cuts or
+	#          fits in the config file, so it may make sense to preclude those.
+
 
 	# load config from files (returns a dict)
 	cfg = config.load("fitBranch", "common")
@@ -1456,6 +1491,7 @@ if __name__ == '__main__':
 	# data arguments
 	parser.add_argument("run"  ,type=str,help="file location, name, or number")
 	parser.add_argument("fit"  ,type=str,nargs="+",help="branch to fit: branch,min,max")
+
 	parser.add_argument("--cut",type=str,action='append',help="branch to cut on: branch,min,max")
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
@@ -1476,8 +1512,26 @@ if __name__ == '__main__':
 	# fitting arguments
 	parser.add_argument("--bins",type=int,default=0,dest="nbins",help="number of bins to use")
 	parser.add_argument("--bg"  ,type=str,default="",dest="background",help="background function: any combination of (p)ower (e)xp (c)onstant (l)ine (q)uadratic")
-	parser.add_argument("--g"   ,type=str,action='append',dest="gaus" ,help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu")
-	parser.add_argument("--s"   ,type=str,action='append',dest='smono',help="suppressed monomial: order, min,max xpeak, min,max c, min,max k")
+	parser.add_argument(
+		"--gaus","--g",
+		dest="gaus",
+		type=str,
+		nargs="+",
+		default=[],
+		action=cli.MergeAppendAction,
+		const=((str,)+(float,)*6,GAUS_DEFAULTS),
+		help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu",
+	)
+	parser.add_argument(
+		"--smono","--s",
+		dest='smono',
+		type=str,
+		nargs="+",
+		default=[],
+		action=cli.MergeAppendAction,
+		const=((int,)+(float,)*4,SMONO_DEFAULTS),
+		help="suppressed monomial: order, min,max xpeak, min,max c, min,max k",
+	)
 	parser.add_argument(
 		"--g2",
 		type=str,
@@ -1513,16 +1567,16 @@ if __name__ == '__main__':
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig"  ,type=str,default="",help="location to save figure as png image (overwrites if file exists)")
-	FIGSIZE_DEFAULT = (FIG_DPI, FIG_W_INCHES, FIG_H_INCHES)
+	# FIGSIZE_DEFAULT = (FIG_DPI, FIG_W_INCHES, FIG_H_INCHES)
 	parser.add_argument(
-		"--fig-size", "--fs",
-		dest="figsize",
+		"--figsize", "--fig-size", "--fs",
+		dest=("figure_dpi", "figure_width_inches", "figure_height_inches"),
 		type=str,
-		nargs="+", 
-		action=cli.MergeAction,
-		const=((int,float,float),FIGSIZE_DEFAULT),
-		default=FIGSIZE_DEFAULT,
-		help="figure size x y or x -> (x,x)"
+		nargs="+",
+		action=cli.MultipleDestAction,
+		const=(int,float,float),
+		# default=FIGSIZE_DEFAULT,
+		help="figure size: dpi w h (or) dpi w -> dpi w w"
 	)
 	parser.add_argument("--xfout",type=str,default="",help="location to save transformation as csv file (appends if file exists)")
 	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
@@ -1571,7 +1625,7 @@ if __name__ == '__main__':
 		for i,arg_set in enumerate(arg_sets):
 			this_args = vars(parser.parse_args(arg_set))
 			main(
-				this_args,
+				config.deep_merge(this_args, cfg),
 
 				# todo: better behavior in main when part of multiple set call
 				suspend_show = True,
@@ -1585,4 +1639,5 @@ if __name__ == '__main__':
 	# single call
 	else:
 		args = vars(parser.parse_args())
-		main(args)
+		# main(args)
+		main(config.deep_merge(args, cfg))
