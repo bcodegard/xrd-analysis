@@ -42,3 +42,9 @@ figure_height_inches: 4.8
 # without color specified. Entries can be any object that matplotlib
 # recognizes as a color.
 color_sequence: ["k","m","b","r","c","y",'tab:brown','darkred','magenta']
+
+
+# for raspberry pi / digitizer data files (.txt)
+# inclusive bounds on pulse timestamp (index) for being "in-time"
+rpi_trigger_inclusive_min: 1024
+rpi_trigger_inclusive_max: 1030

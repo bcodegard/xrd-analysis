@@ -8,6 +8,7 @@ __version__ = "0.0"
 
 
 import os
+import re
 import csv
 import numpy as np
 
@@ -528,25 +529,97 @@ def load_xf(file):
 
 
 
-# root cases
-# ...
 
 
 
+def matches_any(patterns, string):
+	"""return the result of the first matching pattern"""
+	for pattern in patterns:
+		match = re.match(pattern, string)
+		if match:
+			return match
 
-# # matplotlib cases
-# # figure dumping / loading breaks some things
-# # deprecated until issue can be resolved
+def in_range_inclusive(number, bounds):
+	if (not bounds) or (number < bounds[0]) or (number > bounds[1]):
+		return False
+	return True
 
-# def dump_figure(figure, destination, overwrite=False):
-# 	if not overwrite:
-# 		if os.path.exists(destination):
-# 			raise ValueError("path {} already exists. set overwrite=True to overwrite.".format(destination))
 
-# 	with open(destination, "wb") as fout:
-# 		pickle.dump(figure, fout)
+RPI_BRANCHES = {
+	"area_all" :[r"area_all_([0-9]+)", r"aa_([0-9]+)", r"aa([0-9]+)"],
+	"area_trig":[r"area_([0-9]+)", r"area([0-9]+)", r"a_([0-9]+)" , r"a([0-9]+)" ],
+	"area_sum" :[r"area_sum_([0-9]+)", r"as_([0-9]+)", r"as([0-9]+)"],
+	"time_all" :[r"time_all_([0-9]+)", r"ta_([0-9]+)", r"ta([0-9]+)"],
+	"time_trig":[r"time_([0-9]+)", r"time([0-9]+)", r"t([0-9]+)"],
+	"n_pulses" :[r"n_pulses_([0-9]+)", r"n_([0-9]+)", r"n([0-9]+)"]
+}
 
-# def load_figure(destination):
-# 	with open(destination, "rb") as fin:
-# 		figure = pickle.load(fin)
-# 	return figure
+# load data from raspberry digitizer/RPI output (.txt file)
+def load_rpi_txt(file, branches=set(), trigger_window=None, ):
+
+	channels_seen = set()
+	data = {key:{} for key in RPI_BRANCHES.keys()}
+
+	with open(file, 'r') as stream:
+		
+		line=stream.readline().strip()
+		iline=0
+		while line:
+			command, _, arguments = line.partition(':')
+
+			# process line
+			if command.startswith("AREA"):
+				channel = int(command[4:])
+
+				# populate data with empty lists the first time
+				# we see a particular channel
+				if channel not in channels_seen:
+					channels_seen.add(channel)
+					for value in data.values():
+						value[channel] = []
+				
+				# collect pulses
+				args = list(map(float, (_ for _ in arguments.strip().split(" ") if _)))
+				area = args[0::2]
+				time = args[1::2]
+
+				# find first triggering pulse
+				pulse_trig = next((i for i,_ in enumerate(time) if in_range_inclusive(_, trigger_window)), -1)
+
+				# calculate each requestable datum
+				# todo: only if any branches match
+				data["n_pulses"][channel].append(len(area))
+				data["area_all"][channel] += area
+				data["time_all"][channel] += time
+				data["area_sum"][channel].append(sum(area))
+				if pulse_trig >= 0:
+					data["area_trig"][channel].append(area[pulse_trig])
+					data["time_trig"][channel].append(time[pulse_trig])
+				else:
+					data["area_trig"][channel].append(0)
+					data["time_trig"][channel].append(0)
+
+
+			elif line.startswith("ANT"):
+				...
+			elif line.startswith("DATA"):
+				...
+
+			# load next line
+			line=stream.readline().strip()
+			iline += 1
+
+	# convert data to numpy arrays
+	data = {key:{ch:np.array(d) for ch,d in value.items()} for key,value in data.items()}
+
+	# assign data to requested branches
+	requested = {}
+	for branch in branches:
+		for name, patterns in RPI_BRANCHES.items():
+			match = matches_any(patterns, branch)
+			if match:
+				channel = int(match.groups()[0])
+				requested[branch] = data[name][channel]
+				continue
+	
+	return requested

@@ -34,6 +34,12 @@ EXT_ROOT = ".root"
 EXT_CSV  = ".csv"
 EXT_PNG  = ".png"
 EXT_NPZ  = ".npz"
+EXT_TXT  = ".txt"
+EXT_DATA_FILES = [
+	EXT_ROOT,
+	EXT_NPZ,
+	EXT_TXT,
+]
 
 # list of parameters corresponding to the locations of peaks
 PEAK_PARAMETERS = ["mu", "xpeak"]
@@ -174,7 +180,7 @@ def extract_arguments(args):
 		run = args["run"]
 
 		# no extension -> .root
-		if not (run.endswith(EXT_ROOT) or run.endswith(EXT_NPZ)):
+		if not any(run.endswith(_) for _ in EXT_DATA_FILES):
 			run += EXT_ROOT
 
 		# no sep -> default location
@@ -320,9 +326,10 @@ def procure_data(args,verbosity,run,run_id,fit,cuts,event_range,convolve,model_i
 	# load non-special branches from file
 	if run.endswith(EXT_ROOT):
 		branches = fileio.load_branches(run, branches_needed - branches_special)
-	else:
-		# load branches from .npz file
+	elif run.endswith(EXT_NPZ):
 		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed - branches_special}
+	elif run.endswith(EXT_TXT):
+		branches = fileio.load_rpi_txt(run, branches_needed - branches_special, args["trigger_window"])
 
 	# add special branches
 	if {"entry","Entry"} & branches_needed:
@@ -1479,6 +1486,10 @@ if __name__ == '__main__':
 	# was ["k","m","b","r","c","y",'tab:brown','darkred','magenta']
 	COLOR_SEQ = cfg["color_sequence"]
 
+	# for raspberry pi digitizer output (.txt files)
+	RPI_TRIG_MIN = cfg["rpi_trigger_inclusive_min"]
+	RPI_TRIG_MAX = cfg["rpi_trigger_inclusive_max"]
+
 	
 
 	parser = argparse.ArgumentParser(
@@ -1496,6 +1507,17 @@ if __name__ == '__main__':
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
 	parser.add_argument("--con",type=int,default=[0],nargs="+",dest="convolve",help="scaler convolution (default none); kernel_size [, type]")
+
+	parser.add_argument(
+		"--trigger-window", "--tw",
+		type=str,
+		nargs="+",
+		dest="trigger_window",
+		action=cli.MergeAction,
+		const=((int,int),(RPI_TRIG_MIN, RPI_TRIG_MAX)),
+		default=(RPI_TRIG_MIN, RPI_TRIG_MAX),
+		help="specify trigger window (inclusive) for rpi/digitizer data. --tw min max",
+	)
 
 	parser.add_argument("--m",type=str,dest="model",help="model to use: model_id,calibration_file")
 	parser.add_argument(
@@ -1576,7 +1598,7 @@ if __name__ == '__main__':
 		action=cli.MultipleDestAction,
 		const=(int,float,float),
 		# default=FIGSIZE_DEFAULT,
-		help="figure size: dpi w h (or) dpi w -> dpi w w"
+		help="figure size: --fs dpi w_inches h_inches"
 	)
 	parser.add_argument("--xfout",type=str,default="",help="location to save transformation as csv file (appends if file exists)")
 	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
