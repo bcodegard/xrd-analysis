@@ -174,18 +174,19 @@ def extract_arguments(args):
 	# try to interpret as integer -> numeric file in default location
 	try:
 		run_id = int(args["run"])
-		run = DATA_LOC.format(run_id)
+		run = DATA_FILE_NUMERIC.format(num = run_id)
 	# not an integer
 	except:
 		run = args["run"]
 
-		# no extension -> .root
+		# no extension -> add default extension
 		if not any(run.endswith(_) for _ in EXT_DATA_FILES):
-			run += EXT_ROOT
+			run += args["default_data_extension"]
 
-		# no sep -> default location
+		# no sep -> default location based on file extension
 		if os.sep not in run:
-			run = os.sep.join([DATA_DIR, run])
+			ext = run.rpartition('.')[2]
+			run = os.sep.join([DATA_DIR_TYPES[ext], run])
 
 		# extract file name and extension
 		name, _, ext = run.rpartition(os.sep)[2].rpartition('.')
@@ -1440,10 +1441,17 @@ if __name__ == '__main__':
 	# 
 	# base location (the "data" folder, or equivalent)
 	DATA_DIR_BASE = os.sep.join(cfg["data_directory"]["base"])
-	# 
-	# was [".", "data", "scint-experiment", "root"]
-	DATA_DIR   = os.sep.join(cfg["data_directory"]["scint_exp_root"]).format(base = DATA_DIR_BASE)
-	DATA_LOC   = os.sep.join([DATA_DIR, "Run{}.root"])
+	#
+	DATA_DIR_ROOT = os.sep.join(cfg["data_directory"]["scint_exp_root"]).format(base = DATA_DIR_BASE)
+	DATA_DIR_NPZ  = os.sep.join(cfg["data_directory"]["scint_exp_np"  ]).format(base = DATA_DIR_BASE)
+	DATA_DIR_TXT  = os.sep.join(cfg["data_directory"]["rpi_txt"       ]).format(base = DATA_DIR_BASE)
+	DATA_DIR_TYPES = {
+		"root":DATA_DIR_ROOT,
+		"npz" :DATA_DIR_NPZ,
+		"txt" :DATA_DIR_TXT,
+	}
+	DATA_DF = cfg["default_data_file"]
+	DATA_FILE_NUMERIC = os.sep.join([DATA_DIR_TYPES[DATA_DF.rpartition(".")[2]], DATA_DF])
 	# 
 	# was [".", "data", "calibration", "{}.csv"]
 	CALIB_DIR  = os.sep.join(cfg["data_directory"]["calibration"]).format(base = DATA_DIR_BASE)

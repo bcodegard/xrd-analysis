@@ -28,6 +28,15 @@ data_directory:
   spectra    : ["{base}", "spectra"    ]
   xf         : ["{base}", "xf"         ]
 
+# default data file extension. This extension will be assumed
+# whenever the data file is specified without an extension
+default_data_extension: ".root"
+
+# Default data file formatter.
+# When the data file is specified as just a number, the data file
+# used will be this string, with {num} replaced with specified number.
+default_data_file: "Run{num}.root"
+
 
 # where figures should be saved if not specified as a full path
 figure_directory:
