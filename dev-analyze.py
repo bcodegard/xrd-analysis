@@ -32,7 +32,7 @@ import utils.expression as expr
 BRANCHES_CONSTRUCT = ['entry']
 
 # todo: put this in a config file instead of code
-ROOT_FILE = "../xrd-analysis/data/root/scintillator/Run{}.root"
+ROOT_FILE = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
 FIG_FILE = "./figs/{}"
 ARG_MULTI = ["AND","and"]
 
@@ -317,6 +317,17 @@ def main(args,iset=None,nsets=None):
 	# load, process, cut, and bin data into form ready for fitting
 	fit_counts, fit_edges = procure_data(args)
 
+	# for index in range(len(fit_counts)):
+	# 	print("\n")
+	# 	print("\n".join(map(str, range(fit_counts[index].size))))
+	# 	print("\n")
+	# 	print("\n".join(map(str, fit_edges[index][:-1])))
+	# 	print("\n")
+	# 	print("\n".join(map(str, fit_edges[index][1:])))
+	# 	print("\n")
+	# 	print("\n".join(map(str, fit_counts[index])))
+	# 	print("\n")
+
 	# construct models and fit them to data
 	model_results_placeholder = model_counts(args, fit_counts, fit_edges)
 
@@ -363,10 +374,14 @@ def main(args,iset=None,nsets=None):
 
 	# decoration
 	plt.legend()
-	plt.ylabel("counts")
-	plt.yscale("log")
+	plt.ylabel("Number of Events")
+	if args.ylog:
+		plt.yscale("log")
 	if args.title:
 		plt.title(args.title)
+
+	plt.xlabel("Energy (KeV)")
+	plt.title("Run 4321, energy in channel 1")
 
 	# scaling
 	if fit[4].startswith("lo"):
@@ -628,6 +643,7 @@ if __name__ == '__main__':
 
 
 	# composing figure(s)
+	parser.add_argument('-y',dest="ylog",action="store_true",help="y axis log scale")
 
 	# saving figure(s)
 	parser.add_argument(

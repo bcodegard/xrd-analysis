@@ -10,6 +10,7 @@ __version__ = "0.0"
 import sys
 import os
 import math
+import gzip
 import argparse
 
 import numpy as np
@@ -35,6 +36,7 @@ EXT_CSV  = ".csv"
 EXT_PNG  = ".png"
 EXT_NPZ  = ".npz"
 EXT_TXT  = ".txt"
+EXT_GZ   = ".gz"
 EXT_DATA_FILES = [
 	EXT_ROOT,
 	EXT_NPZ,
@@ -179,17 +181,25 @@ def extract_arguments(args):
 	except:
 		run = args["run"]
 
+		# get data file extension, ignoring .gz if file is compressed
+		if run.endswith(EXT_GZ):
+			ext = run.rpartition('.')[0].rpartition('.')[2]
+		else:
+			ext = run.rpartition('.')[2]
+
 		# no extension -> add default extension
-		if not any(run.endswith(_) for _ in EXT_DATA_FILES):
+		# if not any(run.endswith(_) for _ in EXT_DATA_FILES+[EXT_GZ]):
+		if not ('.{}'.format(ext) in EXT_DATA_FILES):
 			run += args["default_data_extension"]
 
 		# no sep -> default location based on file extension
 		if os.sep not in run:
-			ext = run.rpartition('.')[2]
+			# ext = run.rpartition('.')[2]
 			run = os.sep.join([DATA_DIR_TYPES[ext], run])
 
 		# extract file name and extension
-		name, _, ext = run.rpartition(os.sep)[2].rpartition('.')
+		name = run.rpartition(os.sep)[2].partition('.')[0]
+		# name, _, ext = run.rpartition(os.sep)[2].rpartition('.')
 
 		# try to extract number from name
 		try:
@@ -324,13 +334,34 @@ def procure_data(args,verbosity,run,run_id,fit,cuts,event_range,convolve,model_i
 	# must have other defined behavior
 	branches_special = {"entry","Entry"}
 
+
+	# create file object to pass to loading function based on content type.
+	# at this point, run is already the full file path; default file types
+	# and directories and names have been applied.
+	# 
+	# if the file path ends with ".gz", its type will come from the
+	# second-to-last extension present.
+	if run.endswith(EXT_GZ):
+		data_file = gzip.open(run,'rb')
+		data_file_type = (run.rpartition('.')[0]).rpartition('.')[2]
+	else:
+		data_file = open(run,'rb')
+		data_file_type = run.rpartition('.')[2]
+
 	# load non-special branches from file
-	if run.endswith(EXT_ROOT):
-		branches = fileio.load_branches(run, branches_needed - branches_special)
-	elif run.endswith(EXT_NPZ):
-		branches = {key:arr for key,arr in np.load(run).items() if key in branches_needed - branches_special}
-	elif run.endswith(EXT_TXT):
-		branches = fileio.load_rpi_txt(run, branches_needed - branches_special, args["trigger_window"])
+	if data_file_type == "root":
+		branches = fileio.load_branches(data_file, branches_needed - branches_special)
+	elif data_file_type == "npz":
+		branches = {key:arr for key,arr in np.load(data_file).items() if key in branches_needed - branches_special}
+	elif data_file_type == "txt":
+		branches = fileio.load_rpi_txt(data_file, branches_needed - branches_special, args["trigger_window"])
+
+	# print(data_file)
+	# print(data_file_type)
+
+	# close data file
+	data_file.close()
+
 
 	# add special branches
 	if {"entry","Entry"} & branches_needed:

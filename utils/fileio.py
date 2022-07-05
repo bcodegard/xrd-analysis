@@ -560,54 +560,54 @@ def load_rpi_txt(file, branches=set(), trigger_window=None, ):
 	channels_seen = set()
 	data = {key:{} for key in RPI_BRANCHES.keys()}
 
-	with open(file, 'r') as stream:
+	# with open(file, 'r') as file:
 		
-		line=stream.readline().strip()
-		iline=0
-		while line:
-			command, _, arguments = line.partition(':')
+	line=file.readline().strip()
+	iline=0
+	while line:
+		command, _, arguments = line.partition(b':')
 
-			# process line
-			if command.startswith("AREA"):
-				channel = int(command[4:])
+		# process line
+		if command.startswith(b"AREA"):
+			channel = int(command[4:])
 
-				# populate data with empty lists the first time
-				# we see a particular channel
-				if channel not in channels_seen:
-					channels_seen.add(channel)
-					for value in data.values():
-						value[channel] = []
-				
-				# collect pulses
-				args = list(map(float, (_ for _ in arguments.strip().split(" ") if _)))
-				area = args[0::2]
-				time = args[1::2]
+			# populate data with empty lists the first time
+			# we see a particular channel
+			if channel not in channels_seen:
+				channels_seen.add(channel)
+				for value in data.values():
+					value[channel] = []
+			
+			# collect pulses
+			args = list(map(float, (_ for _ in arguments.strip().split(b" ") if _)))
+			area = args[0::2]
+			time = args[1::2]
 
-				# find first triggering pulse
-				pulse_trig = next((i for i,_ in enumerate(time) if in_range_inclusive(_, trigger_window)), -1)
+			# find first triggering pulse
+			pulse_trig = next((i for i,_ in enumerate(time) if in_range_inclusive(_, trigger_window)), -1)
 
-				# calculate each requestable datum
-				# todo: only if any branches match
-				data["n_pulses"][channel].append(len(area))
-				data["area_all"][channel] += area
-				data["time_all"][channel] += time
-				data["area_sum"][channel].append(sum(area))
-				if pulse_trig >= 0:
-					data["area_trig"][channel].append(area[pulse_trig])
-					data["time_trig"][channel].append(time[pulse_trig])
-				else:
-					data["area_trig"][channel].append(0)
-					data["time_trig"][channel].append(0)
+			# calculate each requestable datum
+			# todo: only if any branches match
+			data["n_pulses"][channel].append(len(area))
+			data["area_all"][channel] += area
+			data["time_all"][channel] += time
+			data["area_sum"][channel].append(sum(area))
+			if pulse_trig >= 0:
+				data["area_trig"][channel].append(area[pulse_trig])
+				data["time_trig"][channel].append(time[pulse_trig])
+			else:
+				data["area_trig"][channel].append(0)
+				data["time_trig"][channel].append(0)
 
 
-			elif line.startswith("ANT"):
-				...
-			elif line.startswith("DATA"):
-				...
+		elif line.startswith(b"ANT"):
+			...
+		elif line.startswith(b"DATA"):
+			...
 
-			# load next line
-			line=stream.readline().strip()
-			iline += 1
+		# load next line
+		line=file.readline().strip()
+		iline += 1
 
 	# convert data to numpy arrays
 	data = {key:{ch:np.array(d) for ch,d in value.items()} for key,value in data.items()}
