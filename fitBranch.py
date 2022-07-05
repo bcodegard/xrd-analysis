@@ -1482,7 +1482,8 @@ if __name__ == '__main__':
 		"txt" :DATA_DIR_TXT,
 	}
 	DATA_DF = cfg["default_data_file"]
-	DATA_FILE_NUMERIC = os.sep.join([DATA_DIR_TYPES[DATA_DF.rpartition(".")[2]], DATA_DF])
+	DATA_DF_EXT = DATA_DF.rpartition('.')[0].rpartition('.')[2] if DATA_DF.endswith(EXT_GZ) else DATA_DF.rpartition(".")[2]
+	DATA_FILE_NUMERIC = os.sep.join([DATA_DIR_TYPES[DATA_DF_EXT], DATA_DF])
 	# 
 	# was [".", "data", "calibration", "{}.csv"]
 	CALIB_DIR  = os.sep.join(cfg["data_directory"]["calibration"]).format(base = DATA_DIR_BASE)
