@@ -397,7 +397,7 @@ def main_pyroot(get_flat=None, get_ft=None, ):
 			arrays_save[b.replace('->','.')] = arrays_gt[ib][ftr_deposit]
 
 		print("\nsaving filtered arrays...")
-		t,ans = timed(np.savez, "/home/bode/Documents/GitHub/xrd-analysis-refactor/Co57.npz", **arrays_save)
+		t,ans = timed(np.savez, "/home/bode/Documents/GitHub/xrd-analysis/Co57.npz", **arrays_save)
 		print("saving arrays took {:.3f} ms".format(t*1000))
 
 
@@ -536,11 +536,11 @@ def test_use():
 
 
 
-SIM_DIR = '/home/bode/Documents/GitHub/xrd-analysis/data/root/simulation'
-SIM_OUT_DIR = '/home/bode/Documents/GitHub/xrd-analysis-refactor/data/sim'
+# SIM_DIR = '/home/bode/Documents/GitHub/xrd-analysis/data/root/simulation'
+SIM_OUT_DIR = '/home/bode/Documents/GitHub/xrd-analysis/data/scint-simulation/np'
 
-EXP_DIR = '/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator'
-EXP_OUT_DIR = '/home/bode/Documents/GitHub/xrd-analysis-refactor/data/exp'
+EXP_DIR     = '/home/bode/Documents/GitHub/xrd-analysis/data/scint-experiment/root'
+EXP_OUT_DIR = '/home/bode/Documents/GitHub/xrd-analysis/data/scint-experiment/np'
 
 SOURCES = [
 	"Am241",
@@ -569,52 +569,56 @@ if __name__ == '__main__':
 	if True:
 
 		# sources = SOURCES
-		# sources = ["Am241"]
-		# sources = ["Ba133","Cd109"]
-		sources = ["Co57"]
-		files_per_source = {
-			"Am241":["Am241x10.root"],
-			"Ba133":["Ba133x10.root", "Ba133x10_with53mult.root", "Ba133x10_with53.root"],
-			"Cd109":["Cd109x100.root", "Cd109x25.root", "Cd109x25_2.root", "Cd109x25_3.root", "Cd109x25_4.root"],
-			"Co57" :["Co57x10.root"],
-		}
+		# # sources = ["Am241"]
+		# # sources = ["Ba133","Cd109"]
+		# # sources = ["Co57"]
+		# files_per_source = {
+		# 	# "Am241":["Am241x10.root"],
+		# 	# "Ba133":["Ba133x10.root", "Ba133x10_with53mult.root", "Ba133x10_with53.root"],
+		# 	# "Cd109":["Cd109x100.root", "Cd109x25.root", "Cd109x25_2.root", "Cd109x25_3.root", "Cd109x25_4.root"],
+		# 	# "Co57" :["Co57x10.root"],
+		# 	"Am241":["Am241x10new.root" ],
+		# 	"Ba133":["Ba133x10new.root" ],
+		# 	"Cd109":["Cd109x100new.root"],
+		# 	"Co57" :["Co57x10new.root"  ],
+		# }
 
-		# sim_dir = SIM_DIR
-		sim_dir = '/home/bode/Documents/GitHub/xrd-analysis/data/root/simulation2'
+		# # sim_dir = SIM_DIR
+		# sim_dir = '/home/bode/Documents/GitHub/xrd-analysis/data/scint-simulation/root/simulation3'
 
-		sim_out_dir = SIM_OUT_DIR
+		# sim_out_dir = SIM_OUT_DIR
 
-		# sim data
-		for src in sources:
-			print("\nsource {}".format(src))
+		# # sim data
+		# for src in sources:
+		# 	print("\nsource {}".format(src))
 
-			files = files_per_source.get(src, "{}.root".format(src))
-			if type(files) is str:
-				files = [files]
+		# 	files = files_per_source.get(src, "{}.root".format(src))
+		# 	if type(files) is str:
+		# 		files = [files]
 
-			for file in files:
-				print("file {}".format(file))
+		# 	for file in files:
+		# 		print("file {}".format(file))
 				
-				file_in  = os.sep.join([sim_dir    , file])
-				file_out = os.sep.join([sim_out_dir, file.replace(".root",".npz")])
+		# 		file_in  = os.sep.join([sim_dir    , file])
+		# 		file_out = os.sep.join([sim_out_dir, file.replace(".root",".npz")])
 
-				if os.path.exists(file_out):
-					print("\toutput already exists for input file {}".format(file))
-					print("\tdelete ore move existing file if you want to re-process")
-					continue
+		# 		if os.path.exists(file_out):
+		# 			print("\toutput already exists for input file {}".format(file))
+		# 			print("\tdelete ore move existing file if you want to re-process")
+		# 			continue
 				
-				# file_out = os.sep.join([SIM_OUT_DIR, "{}.npz".format(src)])
-				print('\tExtracting data, sim data for src {}'.format(src))
-				print('\toutput file is {}'.format(file))
+		# 		# file_out = os.sep.join([SIM_OUT_DIR, "{}.npz".format(src)])
+		# 		print('\tExtracting data, sim data for src {}'.format(src))
+		# 		print('\toutput file is {}'.format(file))
 
-				root_extract(file_in, file_out)
+		# 		root_extract(file_in, file_out)
 
-		# # experimental  data
-		# for run in [4291, 4293, 4292, 4294, 4225, 4226]:
-		# 	print('\n\n\nExtracting data, experimental data for run {}\n'.format(run))
-		# 	file_in  = os.sep.join([EXP_DIR    , "Run{}.root".format(run)])
-		# 	file_out = os.sep.join([EXP_OUT_DIR, "Run{}.npz".format(run)])
-		# 	root_extract(file_in, file_out, leaves_event=all, leaves_gamma=[])
+		# experimental  data
+		for run in [4291, 4293, 4292, 4294, 4225, 4226]:
+			print('\n\n\nExtracting data, experimental data for run {}\n'.format(run))
+			file_in  = os.sep.join([EXP_DIR    , "Run{}.root".format(run)])
+			file_out = os.sep.join([EXP_OUT_DIR, "Run{}.npz".format(run)])
+			root_extract(file_in, file_out, leaves_event=all, leaves_gamma=[])
 
 	if False:
 		main_pyroot()

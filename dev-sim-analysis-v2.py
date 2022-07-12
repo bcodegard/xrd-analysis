@@ -13,6 +13,7 @@ import numpy as np
 
 import utils.data as data
 import utils.fit as fit
+import utils.display as display
 
 import matplotlib.pyplot as plt
 
@@ -79,8 +80,8 @@ del PVE_KEV["Co57" ]["14.1"]
 # # remove these when not treating PMT saturation region
 # del PVE_KEV["Co57" ]["136.1"]
 
-# remove when not treating DRS saturation region
-del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
+# remove when not treating the corresponding energy region
+# del PVE_KEV["Ba133"]["303.2"] # is reduced to exclude PMT saturation
 
 
 # run numbers for experimental source spectra
@@ -98,18 +99,22 @@ RUNS_EXP_SRC = {
 RUNS_EXP_BG = [4225, 4226]
 
 # data directories and files
-DIR_SIM_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/sim"
+DIR_SIM_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/scint-simulation/np"
 # DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator"
 # DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/root/scintillator"
-DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/exp"
-DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/exp"
+DIR_EXP_SRC = "/home/bode/Documents/GitHub/xrd-analysis/data/scint-experiment/np"
+DIR_EXP_BG  = "/home/bode/Documents/GitHub/xrd-analysis/data/scint-experiment/np"
 
 FILENAME_SIM_SRC = "{src}.npz"
 FILENAME_SIM_SRC_BY = {
-	"Am241":"{src}x10.npz",
-	"Ba133":"{src}x10_with53mult.npz",
-	"Cd109":"{src}x100.npz",
-	"Co57" :"{src}x10.npz",
+	# "Am241":"{src}x10.npz",
+	# "Ba133":"{src}x10_with53mult.npz",
+	# "Cd109":"{src}x100.npz",
+	# "Co57" :"{src}x10.npz",
+	"Am241":"{src}x10new.npz",
+	"Ba133":"{src}x10new.npz",
+	"Cd109":"{src}x100new.npz",
+	"Co57" :"{src}x10new.npz",
 }
 FILES_SIM_SRC = {_:os.sep.join([DIR_SIM_SRC, FILENAME_SIM_SRC_BY.get(_,FILENAME_SIM_SRC).format(src=_)]) for _ in SOURCES}
 
@@ -176,6 +181,7 @@ LEAVES_LOAD_EXP_BG  = {LEAF_EXP_AREA_PVS.format(drs=DRS_ID, ch=_) for _ in CH_AL
 # 	"Co57" :{1:[106,200], 2:[107,200], 3:[112,200]},
 # }
 
+
 # idential ranges for all sources; include PMT saturation
 AREA_RANGE_NVS = {
 	"Am241":{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
@@ -183,6 +189,21 @@ AREA_RANGE_NVS = {
 	"Cd109":{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
 	"Co57" :{1:[12,150], 2:[12,150], 3:[12,165], 4:[0,300]},
 }
+# # Everything but DRS saturation; limit for DRS saturation slightly conservative
+# AREA_RANGE_NVS = {
+# 	"Am241":{1:[13,290], 2:[13,312], 3:[13,322], 4:[0,300]},
+# 	"Ba133":{1:[12,290], 2:[12,312], 3:[12,322], 4:[0,300]},
+# 	"Cd109":{1:[12,290], 2:[12,312], 3:[12,322], 4:[0,300]},
+# 	"Co57" :{1:[12,290], 2:[12,312], 3:[12,322], 4:[0,300]},
+# }
+# # include DRS saturation to see what happens
+# AREA_RANGE_NVS = {
+# 	"Am241":{1:[13,400], 2:[13,400], 3:[13,400], 4:[0,300]},
+# 	"Ba133":{1:[12,400], 2:[12,400], 3:[12,400], 4:[0,300]},
+# 	"Cd109":{1:[12,400], 2:[12,400], 3:[12,400], 4:[0,300]},
+# 	"Co57" :{1:[12,400], 2:[12,400], 3:[12,400], 4:[0,300]},
+# }
+
 
 # # include PMT saturation but exclude poorly simulated low tails
 # # also increase upper range of some all sources to DRS limit
@@ -210,8 +231,8 @@ AREA_RANGE_NVS = {
 # }
 
 # resolution for projections (unitless; number of bins)
-RES_A = 200
-RES_E = 100
+RES_A = 400
+RES_E = 200
 
 # Source peak energies for plotting vlines.
 # These differ from sim component values, so they're tracked separately.
@@ -227,363 +248,108 @@ SOURCE_PEAK_ENERGY_KEV = {
 
 # parameter guesses, based on some initial fit results
 
-# # normalized counts
+# # cubic, params scaled to 50 nVs, include the two HE peaks
 # PARAM_GUESS = {
 # 	1:{
-# 		"gamma"         :     1.107039,
-# 		"res_s_a"       :     0.058332,
-# 		"rho_p"         :     0.002376,
-# 		"n_bg_Am241"    :  4764.428653,
-# 		"n_18.1_Am241"  :   576.523384,
-# 		"n_59.5_Am241"  : 15946.410121,
-# 		"n_bg_Cd109"    :  7783.941640,
-# 		"n_22.1_Cd109"  : 37328.885689,
-# 		"n_25.1_Cd109"  : 14931.307143,
-# 		"n_88.0_Cd109"  :  1239.068423,
-# 		"n_bg_Ba133"    :  7274.405525,
-# 		"n_303.2_Ba133" :     0.000000,
-# 		"n_31.1_Ba133"  : 27810.109143,
-# 		"n_356.0_Ba133" :  4080.333789,
-# 		"n_81.0_Ba133"  :  4467.673179,
-# 		"n_bg_Co57"     :  9912.613250,
-# 		"n_122.1_Co57"  :   133.634939,
-# 		"n_136.1_Co57"  :     0.000000,
+# 		"gamma"         : 1.135e+00,
+# 		"res_s_a"       : 5.726e-02,
+# 		"rho_p"         : 3.433e-03,
+# 		"xf_a"          : 8.575e-17,
+# 		"xf_c"          : 3.792e-02,
+# 		"xf_d"          : 6.208e-04,
+# 		"n_bg_Am241"    : 3.505e-01,
+# 		"n_59.5_Am241"  : 7.609e-03,
+# 		"n_bg_Cd109"    : 4.662e-01,
+# 		"n_22.1_Cd109"  : 1.376e+00,
+# 		"n_25.1_Cd109"  : 4.460e-01,
+# 		"n_88.0_Cd109"  : 9.376e-02,
+# 		"n_bg_Ba133"    : 4.142e-01,
+# 		"n_303.2_Ba133" : 2.790e-02,
+# 		"n_31.1_Ba133"  : 4.512e-01,
+# 		"n_356.0_Ba133" : 3.967e-02,
+# 		"n_81.0_Ba133"  : 1.030e-01,
+# 		"n_bg_Co57"     : 3.104e-01,
+# 		"n_122.1_Co57"  : 1.763e-02,
+# 		"n_136.1_Co57"  : 1.111e-02,
 # 	},
 # 	2:{
-# 		"gamma"         :    1.134562,
-# 		"res_s_a"       :    0.070939,
-# 		"rho_p"         :    0.002941,
-# 		"n_bg_Am241"    :  713.036311,
-# 		"n_18.1_Am241"  :   86.507064,
-# 		"n_59.5_Am241"  : 4261.792237,
-# 		"n_bg_Cd109"    : 1306.638188,
-# 		"n_22.1_Cd109"  : 7578.916941,
-# 		"n_25.1_Cd109"  : 4116.593253,
-# 		"n_88.0_Cd109"  :  921.730587,
-# 		"n_bg_Ba133"    :  890.712460,
-# 		"n_303.2_Ba133" :    0.000000,
-# 		"n_31.1_Ba133"  : 7989.801404,
-# 		"n_356.0_Ba133" : 1527.871611,
-# 		"n_81.0_Ba133"  : 1932.030914,
-# 		"n_bg_Co57"     : 1874.410760,
-# 		"n_122.1_Co57"  :  695.526326,
-# 		"n_136.1_Co57"  :    0.000000,
+# 		"gamma"         : 1.169e+00,
+# 		"res_s_a"       : 4.915e-02,
+# 		"rho_p"         : 5.708e-03,
+# 		"xf_a"          : 2.455e-16,
+# 		"xf_c"          : 4.523e-02,
+# 		"xf_d"          : 7.591e-14,
+# 		"n_bg_Am241"    : 3.288e-01,
+# 		"n_59.5_Am241"  : 1.628e-03,
+# 		"n_bg_Cd109"    : 4.983e-01,
+# 		"n_22.1_Cd109"  : 2.708e-01,
+# 		"n_25.1_Cd109"  : 9.964e-02,
+# 		"n_88.0_Cd109"  : 2.282e-02,
+# 		"n_bg_Ba133"    : 5.630e-01,
+# 		"n_303.2_Ba133" : 7.617e-03,
+# 		"n_31.1_Ba133"  : 1.249e-01,
+# 		"n_356.0_Ba133" : 4.324e-03,
+# 		"n_81.0_Ba133"  : 2.991e-02,
+# 		"n_bg_Co57"     : 3.096e-01,
+# 		"n_122.1_Co57"  : 4.518e-03,
+# 		"n_136.1_Co57"  : 3.304e-03,
 # 	},
 # 	3:{
-# 		"gamma"         :     1.195195,
-# 		"res_s_a"       :     0.076302,
-# 		"rho_p"         :     0.003426,
-# 		"n_bg_Am241"    :  1060.858535,
-# 		"n_18.1_Am241"  :   197.360793,
-# 		"n_59.5_Am241"  :  4655.759070,
-# 		"n_bg_Cd109"    :  1286.354834,
-# 		"n_22.1_Cd109"  : 10479.065108,
-# 		"n_25.1_Cd109"  :  4825.366616,
-# 		"n_88.0_Cd109"  :   809.886161,
-# 		"n_bg_Ba133"    :   256.857389,
-# 		"n_303.2_Ba133" :   371.944536,
-# 		"n_31.1_Ba133"  :  9639.394966,
-# 		"n_356.0_Ba133" :   909.448008,
-# 		"n_81.0_Ba133"  :  2210.247697,
-# 		"n_bg_Co57"     :  1650.147094,
-# 		"n_122.1_Co57"  :   627.245179,
-# 		"n_136.1_Co57"  :     0.000000,
-# 	},
-# }
-
-# # non-normalized counts
-# PARAM_GUESS = {
-# 	1:{
-# 		"gamma"         :  1.106098,
-# 		"res_s_a"       :  0.054130,
-# 		"rho_p"         :  0.002592,
-# 		"n_bg_Am241"    :  0.387854,
-# 		"n_59.5_Am241"  :  1.525951,
-# 		"n_bg_Cd109"    :  0.575178,
-# 		"n_22.1_Cd109"  : 13.247709,
-# 		"n_25.1_Cd109"  : 12.849556,
-# 		"n_88.0_Cd109"  :  8.946416,
-# 		"n_bg_Ba133"    :  0.534179,
-# 		"n_31.1_Ba133"  :  4.487634,
-# 		"n_356.0_Ba133" : 58.393168,
-# 		"n_81.0_Ba133"  :  7.707150,
-# 		"n_bg_Co57"     :  0.704529,
-# 		"n_122.1_Co57"  :  0.000000,
-# 	},
-# 	2:{
-# 		"gamma"         :  1.133792,
-# 		"res_s_a"       :  0.058869,
-# 		"rho_p"         :  0.003742,
-# 		"n_bg_Am241"    :  0.331280,
-# 		"n_59.5_Am241"  :  0.350690,
-# 		"n_bg_Cd109"    :  0.448344,
-# 		"n_22.1_Cd109"  :  2.537088,
-# 		"n_25.1_Cd109"  :  3.395640,
-# 		"n_88.0_Cd109"  :  8.313754,
-# 		"n_bg_Ba133"    :  0.291278,
-# 		"n_31.1_Ba133"  :  1.176115,
-# 		"n_356.0_Ba133" : 20.391918,
-# 		"n_81.0_Ba133"  :  3.216915,
-# 		"n_bg_Co57"     :  0.632431,
-# 		"n_122.1_Co57"  :  1.450615,
-# 	},
-# 	3:{
-# 		"gamma"         :  1.193533,
-# 		"res_s_a"       :  0.065706,
-# 		"rho_p"         :  0.004089,
-# 		"n_bg_Am241"    :  0.504532,
-# 		"n_59.5_Am241"  :  0.170431,
-# 		"n_bg_Cd109"    :  0.505059,
-# 		"n_22.1_Cd109"  :  1.414753,
-# 		"n_25.1_Cd109"  :  1.557634,
-# 		"n_88.0_Cd109"  :  4.156422,
-# 		"n_bg_Ba133"    :  0.315509,
-# 		"n_31.1_Ba133"  :  0.567587,
-# 		"n_356.0_Ba133" :  6.923895,
-# 		"n_81.0_Ba133"  :  1.826853,
-# 		"n_bg_Co57"     :  0.606412,
-# 		"n_122.1_Co57"  :  0.719298,
-# 	},
-# }
-
-# # increased area res, better(?) stuff
-# PARAM_GUESS = {
-# 	1:{
-# 		"gamma"         : 1.097432, 
-# 		"res_s_a"       : 0.066664, 
-# 		"rho_p"         : 0.001989, 
-# 		"n_bg_Am241"    : 0.277073, 
-# 		"n_59.5_Am241"  : 0.006120, 
-# 		"n_bg_Cd109"    : 0.553708, 
-# 		"n_22.1_Cd109"  : 0.307077, 
-# 		"n_25.1_Cd109"  : 0.212869, 
-# 		"n_88.0_Cd109"  : 0.000000, 
-# 		"n_bg_Ba133"    : 0.193090, 
-# 		"n_31.1_Ba133"  : 0.110131, 
-# 		"n_356.0_Ba133" : 0.248205, 
-# 		"n_81.0_Ba133"  : 0.017168, 
-# 		"n_bg_Co57"     : 0.399963, 
-# 		"n_122.1_Co57"  : 0.063805, 
-# 	},
-# 	2:{
-# 		"gamma"         : 1.121880, 
-# 		"res_s_a"       : 0.056019, 
-# 		"rho_p"         : 0.003989, 
-# 		"n_bg_Am241"    : 0.269309, 
-# 		"n_59.5_Am241"  : 0.001301, 
-# 		"n_bg_Cd109"    : 0.295428, 
-# 		"n_22.1_Cd109"  : 0.056627, 
-# 		"n_25.1_Cd109"  : 0.053310, 
-# 		"n_88.0_Cd109"  : 0.071958, 
-# 		"n_bg_Ba133"    : 0.125694, 
-# 		"n_31.1_Ba133"  : 0.026863, 
-# 		"n_356.0_Ba133" : 0.078880, 
-# 		"n_81.0_Ba133"  : 0.003011, 
-# 		"n_bg_Co57"     : 0.228454, 
-# 		"n_122.1_Co57"  : 0.025074, 
-# 	},
-# 	3:{
-# 		"gamma"         : 1.179257, 
-# 		"res_s_a"       : 0.070185, 
-# 		"rho_p"         : 0.003854, 
-# 		"n_bg_Am241"    : 0.363776, 
-# 		"n_59.5_Am241"  : 0.000616, 
-# 		"n_bg_Cd109"    : 0.526177, 
-# 		"n_22.1_Cd109"  : 0.028869, 
-# 		"n_25.1_Cd109"  : 0.024996, 
-# 		"n_88.0_Cd109"  : 0.003722, 
-# 		"n_bg_Ba133"    : 0.171747, 
-# 		"n_31.1_Ba133"  : 0.012543, 
-# 		"n_356.0_Ba133" : 0.030650, 
-# 		"n_81.0_Ba133"  : 0.001752, 
-# 		"n_bg_Co57"     : 0.311807, 
-# 		"n_122.1_Co57"  : 0.009490, 
+# 		"gamma"         : 1.229e+00,
+# 		"res_s_a"       : 4.401e-02,
+# 		"rho_p"         : 6.749e-03,
+# 		"xf_a"          : 1.336e-14,
+# 		"xf_c"          : 4.207e-02,
+# 		"xf_d"          : 2.325e-16,
+# 		"n_bg_Am241"    : 3.381e-01,
+# 		"n_59.5_Am241"  : 7.783e-04,
+# 		"n_bg_Cd109"    : 5.471e-01,
+# 		"n_22.1_Cd109"  : 1.391e-01,
+# 		"n_25.1_Cd109"  : 3.993e-02,
+# 		"n_88.0_Cd109"  : 1.001e-02,
+# 		"n_bg_Ba133"    : 5.312e-01,
+# 		"n_303.2_Ba133" : 1.873e-03,
+# 		"n_31.1_Ba133"  : 5.697e-02,
+# 		"n_356.0_Ba133" : 4.330e-03,
+# 		"n_81.0_Ba133"  : 1.440e-02,
+# 		"n_bg_Co57"     : 3.295e-01,
+# 		"n_122.1_Co57"  : 1.955e-03,
+# 		"n_136.1_Co57"  : 1.562e-03,
 # 	}
 # }
 
-# # expanded range, no A*->A xf (well, trivial one)
-# PARAM_GUESS = {
-# 	1:{
-# 		"gamma"         : 1.053073,
-# 		"res_s_a"       : 0.051010,
-# 		"rho_p"         : 0.003211,
-# 		"n_bg_Am241"    : 0.451030,
-# 		"n_59.5_Am241"  : 0.010363,
-# 		"n_bg_Cd109"    : 0.470105,
-# 		"n_22.1_Cd109"  : 0.656314,
-# 		"n_25.1_Cd109"  : 1.824759,
-# 		"n_88.0_Cd109"  : 0.093391,
-# 		"n_bg_Ba133"    : 0.422128,
-# 		"n_31.1_Ba133"  : 0.403128,
-# 		"n_356.0_Ba133" : 0.056121,
-# 		"n_81.0_Ba133"  : 0.102493,
-# 		"n_bg_Co57"     : 0.491674,
-# 		"n_122.1_Co57"  : 0.035844,
-# 	},
-# 	2:{
-# 		"gamma"         : 1.066205,
-# 		"res_s_a"       : 0.041034,
-# 		"rho_p"         : 0.006049,
-# 		"n_bg_Am241"    : 0.420309,
-# 		"n_59.5_Am241"  : 0.002195,
-# 		"n_bg_Cd109"    : 0.496616,
-# 		"n_22.1_Cd109"  : 0.090365,
-# 		"n_25.1_Cd109"  : 0.465070,
-# 		"n_88.0_Cd109"  : 0.023194,
-# 		"n_bg_Ba133"    : 0.529970,
-# 		"n_31.1_Ba133"  : 0.110079,
-# 		"n_356.0_Ba133" : 0.014181,
-# 		"n_81.0_Ba133"  : 0.030378,
-# 		"n_bg_Co57"     : 0.532650,
-# 		"n_122.1_Co57"  : 0.009522,
-# 	},
-# 	3:{
-# 		"gamma"         : 1.123413,
-# 		"res_s_a"       : 0.035497,
-# 		"rho_p"         : 0.006943,
-# 		"n_bg_Am241"    : 0.489645,
-# 		"n_59.5_Am241"  : 0.001063,
-# 		"n_bg_Cd109"    : 0.545301,
-# 		"n_22.1_Cd109"  : 0.051828,
-# 		"n_25.1_Cd109"  : 0.220742,
-# 		"n_88.0_Cd109"  : 0.010089,
-# 		"n_bg_Ba133"    : 0.531952,
-# 		"n_31.1_Ba133"  : 0.051887,
-# 		"n_356.0_Ba133" : 0.006445,
-# 		"n_81.0_Ba133"  : 0.014347,
-# 		"n_bg_Co57"     : 0.585637,
-# 		"n_122.1_Co57"  : 0.004380,
-# 	}
-# }
-
-# # quadratic area xf results; reduced ranges
-# PARAM_GUESS = {
-# 	1:{
-# 		"gamma"         : 1.141315,
-# 		"res_s_a"       : 0.067588,
-# 		"rho_p"         : 0.002640,
-# 		"xf_a"          : 0.152923,
-# 		"xf_c"          : 0.000809,
-# 		"n_bg_Am241"    : 0.336080,
-# 		"n_59.5_Am241"  : 0.007742,
-# 		"n_bg_Cd109"    : 0.458261,
-# 		"n_22.1_Cd109"  : 1.349762,
-# 		"n_25.1_Cd109"  : 0.497744,
-# 		"n_88.0_Cd109"  : 0.096804,
-# 		"n_bg_Ba133"    : 0.368054,
-# 		"n_31.1_Ba133"  : 0.452639,
-# 		"n_356.0_Ba133" : 0.070551,
-# 		"n_81.0_Ba133"  : 0.107139,
-# 		"n_bg_Co57"     : 0.327316,
-# 		"n_122.1_Co57"  : 0.019040,
-# 	},
-# 	2:{
-# 		"gamma"         : 1.164358,
-# 		"res_s_a"       : 0.062648,
-# 		"rho_p"         : 0.004689,
-# 		"xf_a"          : 0.000000,
-# 		"xf_c"          : 0.000835,
-# 		"n_bg_Am241"    : 0.314902,
-# 		"n_59.5_Am241"  : 0.001658,
-# 		"n_bg_Cd109"    : 0.489223,
-# 		"n_22.1_Cd109"  : 0.262287,
-# 		"n_25.1_Cd109"  : 0.116920,
-# 		"n_88.0_Cd109"  : 0.023575,
-# 		"n_bg_Ba133"    : 0.554149,
-# 		"n_31.1_Ba133"  : 0.125029,
-# 		"n_356.0_Ba133" : 0.008539,
-# 		"n_81.0_Ba133"  : 0.030196,
-# 		"n_bg_Co57"     : 0.326320,
-# 		"n_122.1_Co57"  : 0.004923,
-# 	},
-# 	3:{
-# 		"gamma"         : 1.225017,
-# 		"res_s_a"       : 0.059103,
-# 		"rho_p"         : 0.005742,
-# 		"xf_a"          : 0.000000,
-# 		"xf_c"          : 0.000783,
-# 		"n_bg_Am241"    : 0.311837,
-# 		"n_59.5_Am241"  : 0.000797,
-# 		"n_bg_Cd109"    : 0.534441,
-# 		"n_22.1_Cd109"  : 0.135829,
-# 		"n_25.1_Cd109"  : 0.046766,
-# 		"n_88.0_Cd109"  : 0.010415,
-# 		"n_bg_Ba133"    : 0.485826,
-# 		"n_31.1_Ba133"  : 0.057152,
-# 		"n_356.0_Ba133" : 0.007017,
-# 		"n_81.0_Ba133"  : 0.014886,
-# 		"n_bg_Co57"     : 0.354266,
-# 		"n_122.1_Co57"  : 0.002151,
-# 	}
-# }
-
-# cubic, params scaled to 50 nVs, include the two HE peaks
+# sim v3, res A,E = 200,100, energy range everything but DRS saturation
 PARAM_GUESS = {
 	1:{
-		"gamma"         : 1.135e+00,
-		"res_s_a"       : 5.726e-02,
-		"rho_p"         : 3.433e-03,
-		"xf_a"          : 8.575e-17,
-		"xf_c"          : 3.792e-02,
-		"xf_d"          : 6.208e-04,
-		"n_bg_Am241"    : 3.505e-01,
-		"n_59.5_Am241"  : 7.609e-03,
-		"n_bg_Cd109"    : 4.662e-01,
-		"n_22.1_Cd109"  : 1.376e+00,
-		"n_25.1_Cd109"  : 4.460e-01,
-		"n_88.0_Cd109"  : 9.376e-02,
-		"n_bg_Ba133"    : 4.142e-01,
-		"n_303.2_Ba133" : 2.790e-02,
-		"n_31.1_Ba133"  : 4.512e-01,
-		"n_356.0_Ba133" : 3.967e-02,
-		"n_81.0_Ba133"  : 1.030e-01,
-		"n_bg_Co57"     : 3.104e-01,
-		"n_122.1_Co57"  : 1.763e-02,
-		"n_136.1_Co57"  : 1.111e-02,
+		"gamma"        :1.152e+00,
+		"res_s_a"      :5.520e-02,
+		"res_s_b"      :8.011e-04,
+		"rho_p"        :3.774e-03,
+		"xf_c"         :4.422e-02,
+		"n_bg_Am241"   :3.390e-01,
+		"n_18.1_Am241" :5.684e-01,
+		"n_20.5_Am241" :1.570e+00,
+		"n_26.5_Am241" :2.556e-01,
+		"n_59.5_Am241" :5.084e-02,
+		"n_bg_Cd109"   :4.480e-01,
+		"n_22.1_Cd109" :2.004e-01,
+		"n_25.1_Cd109" :4.611e-02,
+		"n_88.0_Cd109" :1.006e-02,
+		"n_bg_Ba133"   :3.579e-01,
+		"n_303.2_Ba133":3.060e-02,
+		"n_31.1_Ba133" :3.630e-01,
+		"n_356.0_Ba133":4.074e-02,
+		"n_53.5_Ba133" :7.398e-02,
+		"n_81.0_Ba133" :1.054e-01,
+		"n_bg_Co57"    :3.832e-01,
+		"n_122.1_Co57" :4.953e-02,
+		"n_136.1_Co57" :2.585e-02,
 	},
 	2:{
-		"gamma"         : 1.169e+00,
-		"res_s_a"       : 4.915e-02,
-		"rho_p"         : 5.708e-03,
-		"xf_a"          : 2.455e-16,
-		"xf_c"          : 4.523e-02,
-		"xf_d"          : 7.591e-14,
-		"n_bg_Am241"    : 3.288e-01,
-		"n_59.5_Am241"  : 1.628e-03,
-		"n_bg_Cd109"    : 4.983e-01,
-		"n_22.1_Cd109"  : 2.708e-01,
-		"n_25.1_Cd109"  : 9.964e-02,
-		"n_88.0_Cd109"  : 2.282e-02,
-		"n_bg_Ba133"    : 5.630e-01,
-		"n_303.2_Ba133" : 7.617e-03,
-		"n_31.1_Ba133"  : 1.249e-01,
-		"n_356.0_Ba133" : 4.324e-03,
-		"n_81.0_Ba133"  : 2.991e-02,
-		"n_bg_Co57"     : 3.096e-01,
-		"n_122.1_Co57"  : 4.518e-03,
-		"n_136.1_Co57"  : 3.304e-03,
+
 	},
 	3:{
-		"gamma"         : 1.229e+00,
-		"res_s_a"       : 4.401e-02,
-		"rho_p"         : 6.749e-03,
-		"xf_a"          : 1.336e-14,
-		"xf_c"          : 4.207e-02,
-		"xf_d"          : 2.325e-16,
-		"n_bg_Am241"    : 3.381e-01,
-		"n_59.5_Am241"  : 7.783e-04,
-		"n_bg_Cd109"    : 5.471e-01,
-		"n_22.1_Cd109"  : 1.391e-01,
-		"n_25.1_Cd109"  : 3.993e-02,
-		"n_88.0_Cd109"  : 1.001e-02,
-		"n_bg_Ba133"    : 5.312e-01,
-		"n_303.2_Ba133" : 1.873e-03,
-		"n_31.1_Ba133"  : 5.697e-02,
-		"n_356.0_Ba133" : 4.330e-03,
-		"n_81.0_Ba133"  : 1.440e-02,
-		"n_bg_Co57"     : 3.295e-01,
-		"n_122.1_Co57"  : 1.955e-03,
-		"n_136.1_Co57"  : 1.562e-03,
+
 	}
 }
 
@@ -1125,8 +891,73 @@ class routine(object):
 			plt.suptitle('channel {}'.format(ch))
 		plt.show()
 
-	def show_evaluate_p0(self, ch):
-		self.show_evaluate(self.parametrizer.get_p0(), ch, incl_err=False)
+
+	def show_model(self, pm, ch, r_energy, r_area, ):
+		"""show the model (point spread function) from E to A"""
+
+		# use E_to_mu_sigma
+		# and xf_and_dxf
+		# which have already been complied into one PSF, as
+		# self.psf_EA = fit.transformed_gaus_spread(E_to_mu_sigma, xf_and_dxf)
+		# 
+		# which is function of (energy, area_prime, *p) -> probability_density
+		# energy determines (mu, sigma) of the gaussian; area_prime is the axis
+		# over wich the gaussian is calculated.
+		# integrating over area_prime should yield one. 
+
+		# we want to make a 2d plot with axes (energy, area) and value equal
+		# to the probability density that an event with that energy yields a
+		# measurement of that area.
+
+
+		# make flat 2d array of A,E
+		xres = 200 # area
+		yres = 200 # energy
+		l_area   = np.linspace(*r_area  , xres)
+		l_energy = np.linspace(*r_energy, yres)
+
+		g_area = np.broadcast_to(
+			l_area.reshape([xres,1]),
+			[xres, yres],
+		)
+		g_energy = np.broadcast_to(
+			l_energy.reshape([1,yres]),
+			[xres, yres],
+		)
+
+		# calculate probability density
+		density = self.psf_EA(g_energy, g_area, pm)
+		# # cutoff
+		density[np.logical_not(density > 1e-6)] = 0
+		# sampling (n events per energy)
+		print(density.shape, density.min(), density.max())
+		n_samples_per_e = 10000
+		counts = np.random.poisson((density * n_samples_per_e))
+
+		# plt.imshow(density)
+		# plt.show()
+
+		display.display2d(
+			xdata=None, ydata=None, 
+			xbins=l_area, ybins=l_energy,
+			xlog=False, ylog=False,
+			
+			counts = counts,
+			xlabel = "Energy (KeV)",
+			ylabel = "Area (nVs)",	
+			# norm = None,
+
+		)
+		plt.show()
+
+
+
+
+	def show_evaluate_p0(self, ch, src_spec=True, ea_model=False):
+		if src_spec:
+			self.show_evaluate(self.parametrizer.get_p0(), ch, incl_err=False)
+		if ea_model:
+			self.show_model(self.parametrizer.get_p0(), ch, (0, 800), (0, 1000))
 
 
 	@fn_indent
@@ -1173,7 +1004,9 @@ class routine(object):
 		# def xf_and_dxf(A, pm):
 		# 	return A, 1
 
-		if ch == 1:
+		# channels for which a cubic term should be included
+		CH_CUBIC = []
+		if ch in CH_CUBIC:
 			# cubic polynomial a + A + cA^2 + dA^3
 			def xf_and_dxf(A, pm):
 				# scale params to 50 nVs
@@ -1416,6 +1249,10 @@ def main():
 	# rtn.show_evaluate_p0(1)
 	# sys.exit(0)
 
+	# rtn.setup_model(1)
+	# rtn.show_evaluate_p0(1, False, True)
+	# sys.exit(0)
+
 	# ch_fit = CH_COMP
 	ch_fit = [1]
 	# ch_fit = [2,3]
@@ -1424,6 +1261,10 @@ def main():
 	for ch in ch_fit:
 		rtn.setup_model(ch)
 		pm_opt, area, ye, ym = rtn.optimize(ch)
+
+		show_optimized_model = True
+		if show_optimized_model:
+			...
 
 		show_spectra = False
 		if show_spectra:

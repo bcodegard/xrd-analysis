@@ -135,20 +135,24 @@ def display2d(
 		):
 
 	# calculate 2d bin counts if not given
-	if not counts:
+	if counts is False:
 		counts, xe, ye = np.histogram2d(
 			xdata,ydata,
 			[np.array(xbins),np.array(ybins)],
 			density=density,
 		)
+	if xdata is None:
+		xdata = counts.sum(axis=1)
+	if ydata is None:
+		ydata = counts.sum(axis=0)
 
 	# create grid if not specified
 	if gs is False:
 		fig = plt.figure(figsize=(8, 8))
 		gs = fig.add_gridspec(
 			2,2,
-			width_ratios=[3,1],
-			height_ratios=[1,3],
+			width_ratios=[1,3],
+			height_ratios=[3,1],
 			left=0.1, right=0.9,
 			bottom=0.1, top=0.9,
 			wspace=0.0, hspace=0.0,

@@ -577,7 +577,7 @@ def load_rpi_txt(file, branches=set(), trigger_window=None, ):
 				channels_seen.add(channel)
 				for value in data.values():
 					value[channel] = []
-			
+
 			# collect pulses
 			args = list(map(float, (_ for _ in arguments.strip().split(b" ") if _)))
 			area = args[0::2]
