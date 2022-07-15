@@ -380,8 +380,8 @@ def main(args,iset=None,nsets=None):
 	if args.title:
 		plt.title(args.title)
 
-	plt.xlabel("Energy (KeV)")
-	plt.title("Run 4321, energy in channel 1")
+	# plt.xlabel("Energy (KeV)")
+	# plt.title("Run 4321, energy in channel 1")
 
 	# scaling
 	if fit[4].startswith("lo"):

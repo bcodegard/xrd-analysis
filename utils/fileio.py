@@ -551,8 +551,15 @@ RPI_BRANCHES = {
 	"area_sum" :[r"area_sum_([0-9]+)", r"as_([0-9]+)", r"as([0-9]+)"],
 	"time_all" :[r"time_all_([0-9]+)", r"ta_([0-9]+)", r"ta([0-9]+)"],
 	"time_trig":[r"time_([0-9]+)", r"time([0-9]+)", r"t([0-9]+)"],
-	"n_pulses" :[r"n_pulses_([0-9]+)", r"n_([0-9]+)", r"n([0-9]+)"]
+	"n_pulses" :[r"n_pulses_([0-9]+)", r"n_([0-9]+)", r"n([0-9]+)"],
+
+	# "event":[r"event"],
+	"vmax" :[r"v([0-9]+)", r"vmax([0-9]+)", r"vmax_([0-9]+)"],
+	"tmax" :[r"t([0-9]+)", r"tmax([0-9]+)", r"tmax_([0-9]+)"],
 }
+
+# # branches not defined per channel
+# RPI_BRANCHES_EVENT = {"event"}
 
 # load data from raspberry digitizer/RPI output (.txt file)
 def load_rpi_txt(file, branches=set(), trigger_window=None, ):
@@ -575,8 +582,8 @@ def load_rpi_txt(file, branches=set(), trigger_window=None, ):
 			# we see a particular channel
 			if channel not in channels_seen:
 				channels_seen.add(channel)
-				for value in data.values():
-					value[channel] = []
+				for key in data.keys():# - RPI_BRANCHES_EVENT:
+					data[key][channel] = []
 
 			# collect pulses
 			args = list(map(float, (_ for _ in arguments.strip().split(b" ") if _)))
@@ -599,9 +606,19 @@ def load_rpi_txt(file, branches=set(), trigger_window=None, ):
 				data["area_trig"][channel].append(0)
 				data["time_trig"][channel].append(0)
 
-
 		elif line.startswith(b"ANT"):
-			...
+			values = list(map(int, line[5:].split(b" ")))
+			nch = (len(values) - 1) // 2
+			for ich in range(nch):
+
+				if (ich+1) not in channels_seen:
+					channels_seen.add(ich+1)
+					for key in data.keys():# - RPI_BRANCHES_EVENT:
+						data[key][ich+1] = []
+
+				data["vmax"][ich+1].append(values[1 + ich])
+				data["tmax"][ich+1].append(values[1 + ich + nch])
+
 		elif line.startswith(b"DATA"):
 			...
 
