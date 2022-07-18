@@ -70,6 +70,66 @@ iseq = lambda x,y,eps=1e-9:abs(x-y)<eps
 
 
 
+
+class performer(object):
+	"""Performs a single piece of specified analysis,
+	within the supplied context of a routine."""
+
+	def __init__(self, spec):
+		self.spec = spec
+
+	def perform(self, rtn):
+		"""Perform the specified analysis in the context
+		provided by the routine instance 'rtn' """
+		...
+
+
+class routine(object):
+	"""Handles the performance of one or more pieces of analysis,
+	managing continuity between them."""
+
+	def __init__(self, n_specs):
+		
+		# The total number of specifications that will be requested.
+		# This information is needed by performers, so that they can
+		# know whether or not they are the last performer, etc.
+		self.n_specs = n_specs
+
+		# setup persistent objects, for continuity between
+		# different performers
+		self.setup()
+
+	def setup(self):
+		"""Create persistent objects for access by performers"""
+
+		# list of completed performer instances
+		self.performers = []
+
+		# initialize sequential generators (for color choices, etc.)
+		...
+
+	def fulfill(self, spec):
+		"""fulfill the supplied specifications by 
+		performing the analysis specified by 'spec'"""
+
+		# create performer instance with the supplied specifications
+		perf = performer(spec)
+
+		# perform the analysis, supplying self for context
+		perf.perform(self)
+
+		# after performer is finished, append it to the list
+		# of completed performers
+		self.performers.append(perf)
+
+
+
+
+
+
+
+
+
 def procure_data(args):
 	"""Load branches from specified file as needed to calculate
 	all fit and cut expressions. Then apply cuts and binning, and
@@ -307,7 +367,7 @@ def main(args,iset=None,nsets=None):
 	#       functionality such as packing data to a CSV format to be
 	#       defined within the class.
 
-	# placeholder diagnostic info: just pring whole set of args
+	# placeholder diagnostic info: just print whole set of args
 	klmax = max([len(_) for _ in vars(args).keys()])
 	print("args")
 	for i,kv in enumerate(vars(args).items()):
@@ -316,17 +376,6 @@ def main(args,iset=None,nsets=None):
 
 	# load, process, cut, and bin data into form ready for fitting
 	fit_counts, fit_edges = procure_data(args)
-
-	# for index in range(len(fit_counts)):
-	# 	print("\n")
-	# 	print("\n".join(map(str, range(fit_counts[index].size))))
-	# 	print("\n")
-	# 	print("\n".join(map(str, fit_edges[index][:-1])))
-	# 	print("\n")
-	# 	print("\n".join(map(str, fit_edges[index][1:])))
-	# 	print("\n")
-	# 	print("\n".join(map(str, fit_counts[index])))
-	# 	print("\n")
 
 	# construct models and fit them to data
 	model_results_placeholder = model_counts(args, fit_counts, fit_edges)
@@ -399,9 +448,71 @@ def main(args,iset=None,nsets=None):
 
 if __name__ == '__main__':
 
+
+	# how to handle CLI arguments and config file contents
+	# coherently, simply, and robustly?
+	# 
+	# 1) compose 'args' from CLI arguments via argparse
+	# 2) load 'cfg' from config file(s) via config module
+	# 3) compose 'specificatoin' from 'args' and 'cfg' via a function of the routine class
+	#        rtn.compose_specification(args, cfg)
+	# 
+	# the 'compose_specification' function would handle renaming, processing, merging, 
+	# and resolving information that isn't handled by argparse actions.
+	# 
+	# this includes
+	#     composing file paths from config file contents
+	#     determining specification values based on priorities from different sources (values in one or more config file, values from one or more CLI arguments, ...)
+	#     anything else needed
+	# 
+	# 
+	# 
+	# what this would look like, ignoring the 'and' argument
+	# 
+	# >>> args = parser.parse_args(sys.argv)
+	# >>> cfg  = config.load_config(['analyze', 'common'])
+	# >>> spec = compose_specs(args, cfg)
+	# >>> 
+	# >>> rtn = routine(spec)
+	# >>> rtn.perform()
+	# 
+	# 
+	# 
+	# the 'and' argument could be handled by splitting and making lists
+	# of 'args' and 'spec' for each, then instantiating and running routine
+	# objects for each entry in spec.
+	# 'spec' would additionally contain info on how many sets there are,
+	# and which one this is.
+	# 
+	# Alternatively, the same routine instance could be asked to process each set
+	# one after the other. This would have the advantage of natively handling the
+	# how-many-and-which problem, as the routine could keep track on its own. This
+	# would also allow the routine to keep its own generators for colors, etc.
+	# This is the way to go.
+	# 
+	# >>> ...
+	# >>> 
+	# >>> specs = [compose_specs(_,cfg) for _ in args]
+	# >>> rtn = routine()
+	# >>> for spec in specs:
+	# >>>     rtn.perform(spec)
+	# >>> 
+	# 
+	# The routine object would set up generators and structures on init.
+	# Then, separate instances of a 'performer' class would be created and
+	# performed each time rtn.perform(spec) is called. These instances would
+	# be given access to the routine's persistent objects, and the results
+	# of the instances would be kept in memory. This would allow continuity
+	# between separate specifications, and for performers to access the
+	# results of previous performers. This would in turn permit comparisons
+	# to be made between the spectra or fit results of different performers.
+	# 
+	# 
+
+
 	parser = argparse.ArgumentParser(
 		description="fit a model to a binned branch, optionally transforming and cutting",
-		)
+	)
 
 	# version
 	parser.add_argument("--version",action="version",version="%(prog)s {}".format(__version__))
