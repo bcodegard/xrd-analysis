@@ -623,6 +623,23 @@ def procure_data(args,verbosity,run,run_id,fit,cuts,event_range,convolve,model_i
 	# print(sample_means)
 	# print("")
 
+	# if specified, print statistical measures (moments) of fit_data
+	if args["moments"]:
+		print("moments of {} after all cuts are applied:".format(fit[0]))
+		print("mean  : {}".format(fit_data.mean()))
+		print("stdev : {}".format(fit_data.std()))
+		print("min   : {}".format(np.min(fit_data)))
+		print("max   : {}".format(np.max(fit_data)))
+		print("percentiles")
+		print(" 1% : {}".format(np.percentile(fit_data,  1)))
+		print(" 5% : {}".format(np.percentile(fit_data,  5)))
+		print("25% : {}".format(np.percentile(fit_data, 25)))
+		print("50% : {}".format(np.percentile(fit_data, 50)))
+		print("75% : {}".format(np.percentile(fit_data, 75)))
+		print("95% : {}".format(np.percentile(fit_data, 95)))
+		print("99% : {}".format(np.percentile(fit_data, 99)))
+		print("")
+
 	return fit_data
 
 
@@ -1625,6 +1642,8 @@ if __name__ == '__main__':
 
 	parser.add_argument("--xs",dest="xsymlog",type=float,default=None,help="sets x axis of figure to symmetric log scale")
 	parser.add_argument("--ys",dest="ysymlog",type=float,default=None,help="sets y axis of figure to symmetric log scale")
+
+	parser.add_argument("-m",dest="moments",action="store_true",help="print statistical moments of datasets")
 
 	# output arguments
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
