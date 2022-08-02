@@ -693,6 +693,9 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 		print("WARNING: using density mode. Currently this only is supported for display. Fitting density data may lead to undefined behavior.")
 	counts, edges = np.histogram(fit_data, edges, density=density)
 
+	# scale histogram counts if specified. default value of scale is 1.0
+	counts = args["scale"] * counts
+
 	if ref_spec:
 		
 		# load reference spectrum and choose best entry
@@ -1564,6 +1567,13 @@ if __name__ == '__main__':
 	parser.add_argument("--er" ,type=float,dest="event_range",nargs=2,help="use a subset of the dataset. --er start stop")
 	parser.add_argument("-r"   ,action='store_true',dest="raw_bounds",help="if specified, specified bounds are raw")
 	parser.add_argument("--con",type=int,default=[0],nargs="+",dest="convolve",help="scaler convolution (default none); kernel_size [, type]")
+	parser.add_argument(
+		"--scale", "--s",
+		type=float,
+		dest="scale",
+		default=1.0,
+		help="scale all bin counts by this amount",
+	)
 
 	parser.add_argument(
 		"--trigger-window", "--tw",
@@ -1602,7 +1612,7 @@ if __name__ == '__main__':
 		help="gaussian components: min_mu,max_mu (or) name=min_mu,max_mu",
 	)
 	parser.add_argument(
-		"--smono","--s",
+		"--smono","--sm",
 		dest='smono',
 		type=str,
 		nargs="+",
