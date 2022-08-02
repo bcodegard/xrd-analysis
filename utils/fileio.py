@@ -244,6 +244,8 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 		first_key = True
 		branches = {}
 
+		all_keys = set()
+
 		# load arrays from each rootkey and concatenate
 		for rk in rootkey:
 
@@ -255,6 +257,7 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 				tree = root_obj[rk]
 			
 			keys = tree.keys()
+			all_keys |= set(keys)
 
 			branches_get = [_ for _ in keys if to_str(_) in which]
 
@@ -270,6 +273,10 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 					branches[b] = np.concatenate((branches[b], this_array))
 
 			first_key = False
+
+	if not set(which.keys()).issubset(all_keys):
+		print("could not find all requested keys in file {}. Existing keys are:".format(rootfile))
+		print(all_keys)
 
 	return branches
 
