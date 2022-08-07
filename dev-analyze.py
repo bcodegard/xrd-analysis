@@ -340,6 +340,8 @@ def procure_data(args):
 		
 		# calculate histogram counts and append
 		this_counts, _ = np.histogram(this_data, this_edges)
+		# scale by constant multiplier (1.0 by default)
+		this_counts = this_counts * fit[6]
 		fit_counts.append(this_counts)
 		fit_edges.append(this_edges)
 
@@ -423,14 +425,18 @@ def main(args,iset=None,nsets=None):
 
 	# decoration
 	plt.legend()
-	plt.ylabel("Number of Events")
+
 	if args.ylog:
 		plt.yscale("log")
+
 	if args.title:
 		plt.title(args.title)
 
-	# plt.xlabel("Energy (KeV)")
-	# plt.title("Run 4321, energy in channel 1")
+	if args.xlabel:
+		plt.xlabel(args.xlabel)
+	if args.ylabel:
+		# plt.ylabel("Number of Events")
+		plt.ylabel(args.ylabel)
 
 	# scaling
 	if fit[4].startswith("lo"):
@@ -524,8 +530,8 @@ if __name__ == '__main__':
 	# allow fit data specification to be supplied by positional argument
 	# representing the first dataset to be fit, and further datasets
 	# to be specified using --fit 
-	callables_fit = (str, float, float, int, str, str)
-	defaults_fit = (None, -np.inf, np.inf, 0, "lin", "")
+	callables_fit = (str, float, float, int, str, str, float)
+	defaults_fit = (None, -np.inf, np.inf, 0, "lin", "", 1.0)
 	parser.add_argument(
 		"fits",
 		type=str,
@@ -533,7 +539,7 @@ if __name__ == '__main__':
 		action=cli.MergeAppendAction,
 		const=(callables_fit, defaults_fit),
 		default=[],
-		help="expression min=-inf max=inf nbins=auto scale=lin(,log,symlog)",
+		help="expression min=-inf max=inf nbins=auto binning=lin(,log,symlog) scale=1.0",
 	)
 	parser.add_argument(
 		"--fit","--f",
@@ -711,6 +717,8 @@ if __name__ == '__main__':
 	# 
 	# todo: add format code support for title (E.G. {chi2} {dof} etc. get replaced by results of fit routine)
 	parser.add_argument("--title","--t",dest="title",type=str,default="",help="figure title")
+	parser.add_argument("--xlabel","--xl",dest="xlabel",type=str,default="",help="x axis label")
+	parser.add_argument("--ylabel","--yl",dest="ylabel",type=str,default="number of events",help="y axis label")
 	parser.add_argument(
 		"--vline","--vl",
 		dest="vlines",
@@ -860,9 +868,9 @@ if __name__ == '__main__':
 
 	if args.save_fig:
 		fname, dpi, fmt = args.save_fig
-		if '.' not in fname:
-			fname = '{}.{}'.format(fname, fmt)
 		if fname:
+			if '.' not in fname:
+				fname = '{}.{}'.format(fname, fmt)
 			plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
 
 	if args.show:

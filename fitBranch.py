@@ -1417,6 +1417,16 @@ def main(args, suspend_show=False, colors={}):
 		if show:
 			plt.show()
 
+		if args.get("dump", False):
+			# calculate 1d bin counts
+			pCounts = [np.histogram(dat, pBins[idat])[0] for idat,dat in enumerate(pData)]
+			dump(
+				args.get("dump"),
+				[_[0] for _ in fits],
+				pBins,
+				pCounts,
+			)
+
 
 	else:
 		# stage 1: data
@@ -1427,6 +1437,57 @@ def main(args, suspend_show=False, colors={}):
 
 		# stage 3: display and output
 		display_and_write(args, verbosity, vars_data,vars_fit,vars_display, fit_data, bin_data,model_data,fit_results, suspend_show, colors)
+
+		if args.get("dump", False):
+			# No need to send most arguments, since we can just save sys.argv
+			# We only need to send lists, per fit branch, of:
+			#   branch
+			#   bin edges
+			#   bin counts
+			# 
+			# send as lists of length 1, so that the function works for both
+			# single- and multiple-branch calls (1d and 2d plots)
+			nbins, edges, midpoints, counts = bin_data
+			dump(
+				args.get("dump"),
+				[fits[0][0]],
+				[edges],
+				[counts],
+			)
+
+def dump(file, branches, edge_arrays, count_arrays):
+
+	# list of lines for CSV file
+	lines = []
+
+	# add line for command line arguments
+	lines.append(sys.argv)
+
+	# add lines for each branch
+	for ibr,branch in enumerate(branches):
+
+		# line describing branch
+		lines.append(["begin", "1d", branch])
+
+		# lines for histogram bins and counts
+		for ic,count in enumerate(count_arrays[ibr]):
+			lines.append([
+				ic,
+				edge_arrays[ibr][ic],
+				edge_arrays[ibr][ic+1],
+				count,
+			])
+
+	# determine file location
+	if os.sep in file:
+		filepath = file
+	else:
+		# strip redudant extension if present
+		if file.endswith(".csv"):
+			file = file[:-4]
+		filepath = DUMP_LOC.format(file)
+
+	fileio.save_csv(filepath, lines)
 
 
 
@@ -1524,6 +1585,9 @@ if __name__ == '__main__':
 	# was [".", "figs", "{}.png"]
 	FIG_DIR = os.sep.join(cfg["figure_directory"]["base"])
 	FIG_LOC = os.sep.join([FIG_DIR, "{}.png"])
+	# 
+	DUMP_DIR = os.sep.join(cfg["data_directory"]["spectra"]).format(base = DATA_DIR_BASE)
+	DUMP_LOC = os.sep.join([DUMP_DIR, "{}.csv"])
 
 
 	# multiplier and minumum for automatic bin count calculation
@@ -1656,6 +1720,7 @@ if __name__ == '__main__':
 	parser.add_argument("-m",dest="moments",action="store_true",help="print statistical moments of datasets")
 
 	# output arguments
+	parser.add_argument("--dump" ,type=str,default="",help="dump details and data to file")
 	parser.add_argument("--out"  ,type=str,default="",help="location to save fit results as csv file (appends if file exists)")
 	parser.add_argument("--fig"  ,type=str,default="",help="location to save figure as png image (overwrites if file exists)")
 	# FIGSIZE_DEFAULT = (FIG_DPI, FIG_W_INCHES, FIG_H_INCHES)
