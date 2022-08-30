@@ -369,12 +369,14 @@ def main(args,iset=None,nsets=None):
 	#       functionality such as packing data to a CSV format to be
 	#       defined within the class.
 
-	# placeholder diagnostic info: just print whole set of args
-	klmax = max([len(_) for _ in vars(args).keys()])
-	print("args")
-	for i,kv in enumerate(vars(args).items()):
-		print("{} : {}".format(str(kv[0]).ljust(klmax), kv[1]))
-	print("")
+	if args.verbosity >= 1:
+		
+		# placeholder diagnostic info: just print whole set of args
+		klmax = max([len(_) for _ in vars(args).keys()])
+		print("args")
+		for i,kv in enumerate(vars(args).items()):
+			print("{} : {}".format(str(kv[0]).ljust(klmax), kv[1]))
+		print("")
 
 	# load, process, cut, and bin data into form ready for fitting
 	fit_counts, fit_edges = procure_data(args)
@@ -523,6 +525,8 @@ if __name__ == '__main__':
 	# version
 	parser.add_argument("--version",action="version",version="%(prog)s {}".format(__version__))
 
+	# verbosity
+	parser.add_argument("-v",action='count',dest="verbosity",default=0,help="verbosity")
 
 	# data arguments
 	parser.add_argument("run",type=str,help="file location, name, or number")
@@ -562,6 +566,26 @@ if __name__ == '__main__':
 		const=((str,float,float),(None,None,None)),
 		default=[],
 		help="cut on expression. logical_all applied if multiple cuts.",
+	)
+
+	# todo: implement this
+	# 
+	# first N arguments are expressions (dynamically determine based on syntax)
+	# remaining arguments are vertices in the space of the specified expressions
+	# points in the dataset pass the cut if they are inside the convex hull of
+	# the set of supplied vertices.
+	# 
+	# maybe add option specifying whether to also draw region?
+	# specify fill color and alpha, edge color and alpha
+	# mostly useful when drawing multiple datasets to the same canvas.
+	parser.add_argument(
+		"--pulycut","--pc",
+		type=str,
+		nargs="+",
+		dest="polycuts",
+		action="append",
+		default=[],
+		help="(NYI) cut on points being in the convex hull of the supplied vertices",
 	)
 	
 	# expression definitions
@@ -713,12 +737,15 @@ if __name__ == '__main__':
 	parser.add_argument("--check-consistent","--cc",action="store_true",help="assess whether spectra are consistent with each other")
 
 
-	# display and output arguments
+	# display arguments
 	# 
 	# todo: add format code support for title (E.G. {chi2} {dof} etc. get replaced by results of fit routine)
+	# 
+	parser.add_argument('-y',dest="ylog",action="store_true",help="y axis log scale")
 	parser.add_argument("--title","--t",dest="title",type=str,default="",help="figure title")
 	parser.add_argument("--xlabel","--xl",dest="xlabel",type=str,default="",help="x axis label")
 	parser.add_argument("--ylabel","--yl",dest="ylabel",type=str,default="number of events",help="y axis label")
+	parser.add_argument("--no-show","--ns",dest="show",action="store_false",help="don't show the figure")
 	parser.add_argument(
 		"--vline","--vl",
 		dest="vlines",
@@ -760,11 +787,21 @@ if __name__ == '__main__':
 		help="add hspans. --hl lo=0 hi=1 color=k alpha=0.1 edgecolor=None linewidth=1 label=None",
 	)
 
+	# todo: implement this (would be nice)
+	#       specify equation using expressions, eg. 
+	#           "v1/a1 == 10.3"
+	#           "(v1-v2)**2 > 100"
+	#       also specify edge and fill colors (incl. alphas), labels, etc.
+	# 
+	#       on plots, draw the solution to the equation.
+	#       if it's an equality, draw the line/surface/contour
+	#       if it's an inequality, shade the interior and mark the boundary
+	# 
+	# parser.add_argument("--draw", ...)
 
-	# composing figure(s)
-	parser.add_argument('-y',dest="ylog",action="store_true",help="y axis log scale")
 
-	# saving figure(s)
+	# file output arguments
+
 	parser.add_argument(
 		"--save-fig","--svf","--sf",
 		dest="save_fig",
@@ -775,9 +812,32 @@ if __name__ == '__main__':
 		default=False,
 		help="save figure to filename"
 	)
-	parser.add_argument("--no-show","--ns",dest="show",action="store_false",help="don't show the figure")
 
-	# saving data
+	# todo: implement this
+	# 
+	# first argument is file to save data to. should make config entry for
+	# data folder and file {base}/cuts/{}.npz
+	# 
+	# the boolean array for a given cut is always saved.
+	# 
+	# second argument is whether to save the array containing the indices of all the
+	# True values in the boolean array, for each cut included.
+	#
+	# the combined cut is always saved.
+	# 
+	# third argument is whether to save all the individual cuts in addition to the
+	# combined cut.
+	parser.add_argument(
+		"--save-cuts", "--sc",
+		dest="save_cuts",
+		type=str,
+		nargs="+",
+		action=cli.MergeAction,
+		const=((str,cli.as_bool,cli.as_bool), ("",True,False)),
+		default="",
+		help="save applied cuts, and arrays of which events pass them, to a file",
+	)
+
 
 
 	# TODO: create routine class, like used in dev-gain.py

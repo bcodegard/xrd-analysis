@@ -9,6 +9,38 @@ import argparse
 
 
 
+STR_TRUE  = ["y","t","true"]
+STR_FALSE = ["n","f","false"]
+ERR_STR_NOT_BOOL_INTERPRETABLE = "String '{}' cannot be interpreted as boolean."
+def as_bool(string):
+	"""interprets a string as a specification of a boolean value. Not case sensitive.
+	the following are considered True : true  y t 1 1.0 (any number that isn't zero)
+	the following are considered False: false n f 0 0.0 (any number that is zero)"""
+
+	# if we're given a bool, just return it
+	if isinstance(string,bool):
+		return string
+	elif isinstance(string,(int, float)):
+		return bool(string)
+
+	# try to interpret as number
+	try:
+		return bool(float(string))
+	except:
+		pass
+
+	# check cases
+	if string.lower() in STR_TRUE:
+		return True
+	elif string.lower() in STR_FALSE:
+		return False
+
+	# unrecognized -> error
+	else:
+		raise ValueError(ERR_STR_NOT_BOOL_INTERPRETABLE.format(string))
+
+
+
 def infer_dest(option_string, prefix_chars='-'):
 	return option_string.lstrip(prefix_chars).replace('-','_')
 
