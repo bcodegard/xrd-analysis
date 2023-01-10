@@ -278,7 +278,7 @@ class BranchManager(object):
 	def _forget_if_forgetful(self):
 		"""if we're forgetful, remove own references to arrays by setting branches to empty dict"""
 		if self._forgetful:
-			self.branches = {}
+			self._branches = {}
 
 	@property
 	def forgetful(self):
@@ -378,6 +378,14 @@ class BranchManager(object):
 		# return branches
 		# no need to copy here; graft takes care of that.
 		return new_branches
+
+	def prune(self, branches):
+		"""discard existing branch(es)"""
+		if isinstance(branches, str):
+			branches = [branches]
+		for branch in branches:
+			if branch in self._branches:
+				del self._branches[branch]
 
 	def mask(self, mask, key_or_keys=None, apply_mask=False):
 		"""return any requested branches with mask applied.

@@ -33,6 +33,23 @@ ROOTKEY_DEFAULT_MODE_TEMPLATE = 'Events;'
 ROOTKEY_DEFAULT_KEY='Events;1'
 ROOTKEY_DEFAULT_INDEX = -1
 
+# default data type lookup
+class re_dict(object):
+	def __init__(self, cases):
+		self.cases = cases
+	def get(self, key, default=None):
+		for pattern,result in self.cases.items():
+			if re.search(pattern, key):
+				return result
+		if default is not None:
+			return default
+		raise ValueError("no default and no matching case for {}".format(key))
+DTYPES_DEFAULT = re_dict({
+	r"iMax_[0-9]+_[0-9]+"  : int,
+	r"iStart_[0-9]+_[0-9]+": int,
+	r"iEnd_[0-9]+_[0-9]+"  : int,
+})
+
 # list of types that csv entries aren't allowed to be
 CSV_TYPES_FORBIDDEN = [list, tuple]
 
@@ -189,11 +206,12 @@ def get_keys(rootfile, rootkey=None):
 def branch_to_array(branch, key=False, dtype=float):
 	# is 2d
 	if key:
-		return np.array([_[key].to_numpy() for _ in branch], dtype=dtype)
+		# return np.array([_[key].to_numpy() for _ in branch], dtype=dtype)
+		return branch[key].to_numpy().astype(dtype)
 	else:
 		return branch.to_numpy().astype(dtype)
 
-def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
+def load_branches(rootfile, which=set(), rootkey=None, dtypes=DTYPES_DEFAULT, missing="warn"):
 	"""loads branches specified in <which> from <rootfile>. loads all if <which> is empty"""
 
 	if not _has_uproot:
@@ -262,21 +280,33 @@ def load_branches(rootfile, which=set(), rootkey=None, dtypes={}):
 			branches_get = [_ for _ in keys if to_str(_) in which]
 
 			for b in branches_get:
-				this_array = branch_to_array(tree.arrays(b),b if which.get(b,False) else False,dtypes.get(b,float))
-				# print(this_array.size)
-				# print(this_array[:10])
 
+				# default branch key of "0" means that if unspecified,
+				# both 1d and 2d branches can be properly loaded.
+				this_array = branch_to_array(
+					tree.arrays(b),
+					b if which.get(b,False) else "0",
+					dtypes.get(b,float)
+				)
+
+				# if this is the first key in the root file, put the
+				# array into the branches dict
 				if first_key:
 					branches[b] = this_array
 
+				# if this isn't the first key in the root file, 
+				# concatenate the array with the existing one.
 				else:
 					branches[b] = np.concatenate((branches[b], this_array))
 
 			first_key = False
 
 	if not set(which.keys()).issubset(all_keys):
-		print("could not find all requested keys in file {}. Existing keys are:".format(rootfile))
-		print(all_keys)
+		if missing in ("warn", "raise"):
+			print("could not find all requested keys in file {}. Existing keys are:".format(rootfile))
+			print(all_keys)
+		if missing == "raise":
+			raise ValueError("Could not load all requested branches")
 
 	return branches
 

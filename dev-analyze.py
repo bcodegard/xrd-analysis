@@ -33,22 +33,61 @@ BRANCHES_CONSTRUCT = ['entry']
 
 # todo: put this in a config file instead of code
 ROOT_FILE = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
+# ROOT_FILE = "/home/bode/Documents/drsProcessing/processed_wvf/Run{}.root"
 FIG_FILE = "./figs/{}"
 ARG_MULTI = ["AND","and"]
 
+
+# if file argument is interpretable as an integer, this template will be used.
+DFILE_NUMERIC = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
+
+# default location(s) in which to look for files
+DIR_DATA_DEFAULT = "../xrd-analysis/data/scint-experiment/root"
+DIR_DATA = {
+	"root":"../xrd-analysis/data/scint-experiment/root",
+	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz",
+}
+
+# recognized file extensions and the default one
+EXT_RECOGNIZED = [".root", ".npz"]
+EXT_DEFAULT = ".root"
+
+
 # shorthand for common branches, EG a1 -> area_xxxx_1
+# 
+# potential improvement: use regular expressions with capturing groups,
+# r't(?:ime|max|Max)?_?([0-9]+)' : 'tMax_{drsID}_{r[0]}'
+# 
+# string formatting will be performed on the value if the key matches,
+# with the results of any capturing groups passed as *r, and special
+# formatting like drsID passes as kwargs.
+# 
 SHORTHAND = {
 	"A{ch}":"(area_{board}_{ch}/1000)",
 	"a{ch}":"area_{board}_{ch}",
 	"w{ch}":"width_{board}_{ch}",
 	"o{ch}":"offset_{board}_{ch}",
 	"n{ch}":"noise_{board}_{ch}",
-	"v{ch}":"vMax_{board}_{ch}",
-	"t{ch}":"tMax_{board}_{ch}",
 	"s{ch}":"scaler_{board}_{ch}",
+	
+	"vv{ch}":"voltages_{board}_{ch}",
+	"v{ch}":"vMax_{board}_{ch}",
+	
+	"tt{ch}":"times_{board}_{ch}",
+	"t{ch}":"tMax_{board}_{ch}",
+	"tm{ch}":"tMax_{board}_{ch}",
+	"ts{ch}":"tStart_{board}_{ch}",
+	"te{ch}":"tEnd_{board}_{ch}",
 
 	"T{ch}":"timestamp_{board}_{ch}",
 	"T"    :"timestamp_{board}_1",
+
+	"np{ch}"  :"nPeaks30_{board}_{ch}",
+	"np10{ch}":"nPeaks10_{board}_{ch}",
+	"np20{ch}":"nPeaks20_{board}_{ch}",
+	"np30{ch}":"nPeaks30_{board}_{ch}",
+	"np40{ch}":"nPeaks40_{board}_{ch}",
+	"np50{ch}":"nPeaks50_{board}_{ch}",
 }
 
 def replace_names(string, replacements):
@@ -125,6 +164,130 @@ class routine(object):
 
 
 
+class DFileInterface(object):
+	MSG_MISSING_BRANCHES = "could not find all requested keys in file {}. Existing keys are:"
+	ERR_MISSING_BRANCHES = "Could not load all requested branches"
+
+class DFIRoot(DFileInterface):
+	
+	def __init__(self, df):
+		self._df = df
+		self._file = ...
+		self._keys = None
+		self._channels = None
+		self._drsnum = None
+	
+	def keys(self):
+		if self._keys is None:
+			self._keys = fileio.get_keys(root_file)
+		return self._keys
+	
+	def channels(self):
+		if self._channels is None:
+			self._channels = {_.rpartition("_")[2] for _ in branches_all if _.startswith("noise_")}
+		return self._channels
+
+	def load_branches(self, br, missing="warn"):
+		return fileio.load_branches(root_file,br,missing=missing)
+
+	def drsnum(self):
+		if self._drsnum is None:
+			test_branch = next(_ for _ in self.keys() if _.startswith("noise_"))
+			self._drsnum = test_branch.partition('_')[2].partition('_')[0]
+		return self._drsnum
+
+class DFINpz(DFileInterface):
+	
+	def __init__(self, df):
+		self._df = df
+		self._file = np.load(df)
+		self._keys = None
+		self._channels = None
+
+	def __del__(self):
+		self._file.close()
+	
+	def keys(self):
+		if self._keys is None:
+			self._keys = list(self._file.keys())
+		return self._keys
+	
+	def channels(self):
+		if self._channels is None:
+			# placeholder. todo: implement a check for this.
+			self._channels = (0,1,2,3,4,5,6,7)
+		return self._channels
+
+	def load_branches(self, br, missing="warn"):
+		branches = {}
+		for bname in br:
+			branch = self._file.get(brname)
+			if branch is not None:
+				branches[bname] = branch
+
+		if missing in ("warn", "raise"):
+			if not set(br).issubset(set(branches.keys())):
+				print(self.MSG_MISSING_BRANCHES.format(rootfile))
+				print(all_keys)
+				if missing == "raise":
+					raise ValueError(ERR_MISSING_BRANCHES)
+
+		return branches
+
+
+
+
+def find_dfile(args):
+	"""interpret data file argument"""
+
+	dfile = args.run
+
+	# if the os.sep character is in the supplied argument, use it as-is.
+	if os.sep in args.run:
+		pass
+
+	# if dfile is interpretable as integer, use the numeric file template
+	elif dfile.isdigit():
+		dfile = DFILE_NUMERIC.format(dfile)
+
+	# otherwise, try to interpret it based on extension
+	else:
+		
+		# if there's no recognized file extension, use the default
+		if not any((dfile.endswith(_) for _ in EXT_RECOGNIZED)):
+
+			# if there's a period in the filename, but no recognized extension, warn
+			if "." in dfile:
+				raise Warning("File may have unrecognized extension. Assuming default file type ({}) for file {}".format(EXT_DEFAULT, dfile))
+
+			dfile = "{}{}".format(dfile,EXT_DEFAULT)
+
+		# use the default directory (since there's no os.sep character
+		# in the argument, we need to make it a full path.)
+		ext = dfile.rpartition(".")[2]
+		dfile = os.sep.join([
+			DIR_DATA.get(ext, DIR_DATA_DEFAULT),
+			dfile
+		])
+
+	ext = dfile.rpartition(".")[2]
+	return dfile, ext
+
+def load_dfile(args):
+	"""locate the requested file and open it with the
+	appropriate interface."""
+
+	dfile, ext = find_dfile(args)
+
+	# load file with appropriate interface
+	if ext == "root":
+		dfi = DFIRoot(dfile)
+	elif ext == "npz":
+		dfi = DFINpz(dfile)
+	else:
+		raise NotImplementedError("unrecognized data file extension: {}".format(ext))
+
+	return dfi
 
 
 
@@ -135,14 +298,18 @@ def procure_data(args):
 	all fit and cut expressions. Then apply cuts and binning, and
 	return only the processed fit data."""
 
+	# compose full file path from supplied argument
+	root_file = args.run if os.sep in args.run else ROOT_FILE.format(args.run)
+	
 
 	# look up list of all branches in the specified root file
 	# determine four-digit number of DRS board used
 	# apply shorthand (a1 -> area_xxxx_1, etc.)
-	root_file = args.run if os.sep in args.run else ROOT_FILE.format(args.run)
 	branches_all = fileio.get_keys(root_file)
+
 	# find all channels present by matching noise_*
 	channels = {_.rpartition("_")[2] for _ in branches_all if _.startswith("noise_")}
+	
 	# any matching channels: fill replacements using templates in SHORTHAND
 	if channels:
 		test_branch = next(_ for _ in branches_all if _.startswith("noise_"))
@@ -178,6 +345,11 @@ def procure_data(args):
 		fn_fits.append(fn)
 		branches_needed |= fn.kwargnames
 
+	# likewise for plots, but only supporting literals. to plot expressions,
+	# first use --def.
+	for plot in args.scatterplots:
+		branches_needed |= {replace_names(plot[0],replacements),replace_names(plot[1],replacements)}
+	
 	# copy at this point to capture branches needed for fit expressions
 	branches_needed_fit = branches_needed.copy()
 	
@@ -222,6 +394,9 @@ def procure_data(args):
 
 	# initialize the branch manager instance with the resulting branches
 	bm = data.BranchManager(branches, export_copies=False, import_copies=False)
+
+	for key in bm.keys:
+		print(key, bm[key].dtype, bm[key].shape)
 
 	# construct special branches if needed
 	if "entry" in branches_needed:
@@ -269,6 +444,8 @@ def procure_data(args):
 				bm.bud(
 					lambda man:{this_name:this_fn(**{_:man[_] for _ in this_fn.kwargnames})}
 				)
+				if args.verbosity >= 2:
+					print("created branch {} with shape {}".format(this_name, bm[this_name].shape))
 
 				fn_defs_remain[i] = False
 
@@ -293,10 +470,13 @@ def procure_data(args):
 		if n_remaining_now == n_remaining:
 			print("could not evaluate all definititions and transformations")
 			print("missing one or more variables for completion")
+			print("missing: {}".format(branches_fit_and_cut - set(bm.keys)))
 			sys.exit(1)
 
 		n_remaining = n_remaining_now
 
+	# discard all branches not in branches_fit_and_cut
+	bm.prune(set(bm.keys) - branches_fit_and_cut)
 
 	# wrapper functions to capture loop variable values
 	# if we don't use these, the overwritten value of fn and other
@@ -322,23 +502,79 @@ def procure_data(args):
 		else:
 			masks.append(mask_range(fn,this_cut[1],this_cut[2]))
 
-	# apply cuts
+	# apply combined mask
+	# todo: this applies the mask to branches that are needed to calculate
+	# the mask, but not afterward. could save some computation by first
+	# generating the mask, then discarding unneeded branches, then appling
+	# the mask.
 	if masks:
-		data_fit_raw = bm.mask(
-			data.mask_all(*masks),
-			branches_needed_fit,
-			apply_mask = False,
-		)
-	else:
-		data_fit_raw = {_:bm[_] for _ in branches_needed_fit}
+		# combined_mask = 
+		bm.mask(data.mask_all(*masks), apply_mask=True)
+	
+	# discard all branches not needed for fits
+	bm.prune((bm.keys) - branches_needed_fit)
+	
+	# # apply cuts
+	# if masks:
+	# 	if args.verbosity >= 1:
+	# 		print("applying {} cuts".format(len(masks)))
+	# 	data_fit_raw = bm.mask(
+	# 		combined_mask,
+	# 		branches_needed_fit,
+	# 		apply_mask = False,
+	# 	)
+	# else:
+	# 	data_fit_raw = {_:bm[_] for _ in branches_needed_fit}
 
-
+	
 	# data_fit_raw are all the branches that show up in the expression
 	# for at least one fit. to get the fit data, we have still have to
 	# evaluate the expressions.
 	fit_data = []
 	for fn in fn_fits:
-		fit_data.append(fn(**{_:data_fit_raw[_] for _ in fn.kwargnames}))
+		fit_data.append(fn(**{_:bm[_] for _ in fn.kwargnames}))
+		if args.verbosity >= 1:
+			print("calculated fit data with shape {}".format(fit_data[-1].shape))
+
+	# print statistics if requested
+	if args.means:
+		for ifit,fit in enumerate(args.fits):
+			print("")
+			print(fit[0])
+			print("mean: {}".format(fit_data[ifit].mean()))
+		print("")
+
+	# 2d scatterplots if requested
+	if args.scatterplots:
+		
+		for plot in args.scatterplots:
+			# print(replace_names(plot[0], replacements))
+			# print(replace_names(plot[1], replacements))
+			plt.plot(
+				bm[replace_names(plot[0], replacements)],
+				bm[replace_names(plot[1], replacements)],
+				marker    = plot[2],
+				linestyle = plot[3],
+				color     = plot[4],
+				label = plot[5],
+			)
+			plt.xlabel(plot[0])
+			plt.ylabel(plot[1])
+		
+		decorate_plot(args)
+
+		if args.save_fig:
+			fname, dpi, fmt = args.save_fig
+			if fname:
+				if '.' not in fname:
+					fname = '{}.{}'.format(fname, fmt)
+				plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
+
+		plt.show()
+		
+		if not args.mapplots:
+			sys.exit(0)
+
 
 	# get counts and edges by binning data_fit_raw
 	fit_counts = []
@@ -347,13 +583,17 @@ def procure_data(args):
 		this_data = fit_data[i]
 
 		# determine bin edges
-		lo = this_data.min() if fit[1] in [None,-np.inf] else fit[1]
-		hi = this_data.max() if fit[2] in [None, np.inf] else fit[2]
+		lo = this_data[~np.isnan(this_data)].min() if fit[1] in [None,-np.inf] else fit[1]
+		hi = this_data[~np.isnan(this_data)].max() if fit[2] in [None, np.inf] else fit[2]
+		# lo = np.percentile(this_data[~np.isnan(this_data)],  0.2) if fit[1] in [None,-np.inf] else fit[1]
+		# hi = np.percentile(this_data[~np.isnan(this_data)], 99.8) if fit[2] in [None, np.inf] else fit[2]
+
 		if fit[3]:
 			nbins = fit[3]
 		else:
 			this_ndata = data.inrange(this_data,lo,hi,True,True).sum()
 			nbins = data.bin_count_from_ndata(this_ndata)
+		print(i,lo,hi,nbins)
 		if fit[4].startswith("li"):
 			this_edges = data.edges_lin(lo,hi,nbins)
 		elif fit[4].startswith("lo"):
@@ -370,6 +610,40 @@ def procure_data(args):
 		fit_counts.append(this_counts)
 		fit_edges.append(this_edges)
 
+
+	# make 2d mapplots if specified
+	if args.mapplots:
+		gs = display.pairs2d(
+			fit_data,
+			fit_edges,
+			[_[4].startswith("lo") for _ in args.fits],
+			[_[5] if _[5] else _[0] for _ in args.fits],
+			cmap="afmhot",
+			cbad="grey",
+			norm="log" if args.ylog else None,
+		)
+
+		if args.title:
+			plt.suptitle(args.title)
+
+		# print(plt.rcParams["figure.figsize"])
+		# plt.rcParams["figure.figsize"] = [12.0,8.0]
+		# plt.rcParams["figure.autolayout"] = True
+		fig = plt.gcf()
+		fig.set_figheight(8)
+		fig.set_figwidth(12)
+
+		if args.save_fig:
+			fname, dpi, fmt = args.save_fig
+			if fname:
+				if '.' not in fname:
+					fname = '{}.{}'.format(fname, fmt)
+				plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
+
+		plt.show()
+		sys.exit(0)
+
+
 	return fit_counts, fit_edges
 
 
@@ -379,6 +653,56 @@ def model_counts(args, fit_counts, fit_edges):
 
 def display_and_write(args, fit_counts, fit_edges, model_results_placeholder):
 	return None
+
+
+def decorate_plot(args,):
+	
+	# hlines and vlines
+	for loc,col,ls,label in args.vlines:
+		plt.axvline(loc, color=col, ls=ls, label=label)
+	for loc,col,ls,label in args.hlines:
+		plt.axhline(loc, color=col, ls=ls, label=label)
+	for lo,hi,fc,alph,ec,lw,label in args.vspans:
+		facecolor = colors.to_rgb(fc)+(alph,)
+		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
+		plt.axvspan(
+			lo,hi,
+			facecolor=facecolor,
+			edgecolor=edgecolor,
+			linewidth=lw,
+			label=label,
+		)
+	for lo,hi,fc,alph,ec,lw,label in args.hspans:
+		facecolor = colors.to_rgb(fc)+(alph,)
+		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
+		plt.axhspan(
+			lo,hi,
+			facecolor=facecolor,
+			edgecolor=edgecolor,
+			linewidth=lw,
+			label=label,
+		)
+
+	# decoration
+	plt.legend()
+	if args.title:
+		plt.title(args.title)
+	if args.xlabel:
+		plt.xlabel(args.xlabel)
+	if args.ylabel:
+		plt.ylabel(args.ylabel)
+
+	# ticks
+	if args.xticks:
+		plt.xticks(args.xticks)
+
+	# scaling
+	if args.ylog:
+		plt.yscale("log")
+	if args.fits and args.fits[-1][4].startswith("lo"):
+		plt.xscale("log")
+	elif args.fits and args.fits[-1][4].startswith("s"):
+		...
 
 
 def main(args,iset=None,nsets=None):
@@ -424,53 +748,7 @@ def main(args,iset=None,nsets=None):
 			label=fit[5] if fit[5] else fit[0],
 		)
 
-	# hlines and vlines
-	for loc,col,ls,label in args.vlines:
-		plt.axvline(loc, color=col, ls=ls, label=label)
-	for loc,col,ls,label in args.hlines:
-		plt.axhline(loc, color=col, ls=ls, label=label)
-	for lo,hi,fc,alph,ec,lw,label in args.vspans:
-		facecolor = colors.to_rgb(fc)+(alph,)
-		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
-		plt.axvspan(
-			lo,hi,
-			facecolor=facecolor,
-			edgecolor=edgecolor,
-			linewidth=lw,
-			label=label,
-		)
-	for lo,hi,fc,alph,ec,lw,label in args.hspans:
-		facecolor = colors.to_rgb(fc)+(alph,)
-		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
-		plt.axhspan(
-			lo,hi,
-			facecolor=facecolor,
-			edgecolor=edgecolor,
-			linewidth=lw,
-			label=label,
-		)
-
-
-	# decoration
-	plt.legend()
-
-	if args.ylog:
-		plt.yscale("log")
-
-	if args.title:
-		plt.title(args.title)
-
-	if args.xlabel:
-		plt.xlabel(args.xlabel)
-	if args.ylabel:
-		# plt.ylabel("Number of Events")
-		plt.ylabel(args.ylabel)
-
-	# scaling
-	if fit[4].startswith("lo"):
-		plt.xscale("log")
-	elif fit[4].startswith("s"):
-		...
+	decorate_plot(args)
 	
 	# if (iset is None) or (iset == nsets-1):
 	# 	plt.show()
@@ -813,6 +1091,33 @@ if __name__ == '__main__':
 		help="add hspans. --hl lo=0 hi=1 color=k alpha=0.1 edgecolor=None linewidth=1 label=None",
 	)
 
+	parser.add_argument(
+		"--scatterplot", "--sp",
+		dest="scatterplots",
+		type=str,
+		nargs="+",
+		action=cli.MergeAppendAction,
+		const=((str,str,str,str,str,str), ("","",".","",None,None)),
+		default=[],
+		help="--plot var1 var2 mkr=. ls= color=auto label=None"
+	)
+	parser.add_argument(
+		"--mapplots","--mp","--heatmap","--hm",
+		dest="mapplots",
+		action="store_true",
+		default=False,
+		help="if specified, make 2d colorplots for each choice of 2 fits"
+	)
+
+	parser.add_argument(
+		"--xticks", "--xt",
+		dest="xticks",
+		nargs = "+",
+		type = float,
+		default = None, 
+	)
+
+
 	# todo: implement this (would be nice)
 	#       specify equation using expressions, eg. 
 	#           "v1/a1 == 10.3"
@@ -862,6 +1167,14 @@ if __name__ == '__main__':
 		const=((str,cli.as_bool,cli.as_bool), ("",True,False)),
 		default="",
 		help="save applied cuts, and arrays of which events pass them, to a file",
+	)
+
+	# print statistics on fit expressions
+	parser.add_argument(
+		"-m",
+		dest="means",
+		action="count",
+		help="print statistics on fit data"
 	)
 
 
@@ -945,9 +1258,11 @@ if __name__ == '__main__':
 
 
 	class ddict(dict):
-		"""dict sublass which returns "{key}" for missing key"""
+		"""dict sublass which returns "{key}" for missing key.
+		Used for partial completion of string formatting."""
 		def __missing__(self,key):
 			return '{'+key+'}'
+	
 	fig = plt.gcf()
 	title = fig.axes[0].get_title()
 	plt.title(title.format_map(ddict(title_keys)))
