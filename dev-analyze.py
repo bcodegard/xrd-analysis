@@ -45,7 +45,7 @@ DFILE_NUMERIC = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
 DIR_DATA_DEFAULT = "../xrd-analysis/data/scint-experiment/root"
 DIR_DATA = {
 	"root":"../xrd-analysis/data/scint-experiment/root",
-	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz",
+	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz-low-thresh",
 }
 
 # recognized file extensions and the default one
@@ -266,8 +266,8 @@ class DFINpz(DFileInterface):
 
 		if missing in ("warn", "raise"):
 			if not set(br).issubset(set(branches.keys())):
-				print(self.MSG_MISSING_BRANCHES.format(rootfile))
-				print(all_keys)
+				print(self.MSG_MISSING_BRANCHES.format(self._df))
+				print(self.keys())
 				if missing == "raise":
 					raise ValueError(ERR_MISSING_BRANCHES)
 
@@ -609,16 +609,17 @@ def procure_data(args):
 		decorate_plot(args)
 
 		if args.save_fig:
-			fname, dpi, fmt = args.save_fig
+			fname, dpi, fmt, hi, wi = args.save_fig
 			if fname:
 				if '.' not in fname:
 					fname = '{}.{}'.format(fname, fmt)
 				plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
 
-		plt.show()
 		
-		if not args.mapplots:
-			sys.exit(0)
+		# plt.show()
+		# if not args.mapplots:
+			# sys.exit(0)
+			# return [],[]
 
 
 	# get counts and edges by binning data_fit_raw
@@ -674,12 +675,15 @@ def procure_data(args):
 		# print(plt.rcParams["figure.figsize"])
 		# plt.rcParams["figure.figsize"] = [12.0,8.0]
 		# plt.rcParams["figure.autolayout"] = True
+
 		fig = plt.gcf()
-		fig.set_figheight(8)
-		fig.set_figwidth(12)
 
 		if args.save_fig:
-			fname, dpi, fmt = args.save_fig
+			if args.save_fig[4]:
+				fig.set_figheight(args.save_fig[4])
+			if args.save_fig[3]:
+				fig.set_figwidth(args.save_fig[3])
+			fname, dpi, fmt, wi, hi = args.save_fig
 			if fname:
 				if '.' not in fname:
 					fname = '{}.{}'.format(fname, fmt)
@@ -784,14 +788,15 @@ def main(args,iset=None,nsets=None):
 
 	# testing fit data results: just show plots with counts
 	print("")
-	for i,fit in enumerate(args.fits):
-		print("fit {:>12} - total counts {:>7}".format(fit[0], fit_counts[i].sum()))
-		plt.step(
-			(fit_edges[i][1:]+fit_edges[i][:-1])*0.5,
-			fit_counts[i],
-			where='mid',
-			label=fit[5] if fit[5] else fit[0],
-		)
+	if not args.scatterplots:
+		for i,fit in enumerate(args.fits):
+			print("fit {:>12} - total counts {:>7}".format(fit[0], fit_counts[i].sum()))
+			plt.step(
+				(fit_edges[i][1:]+fit_edges[i][:-1])*0.5,
+				fit_counts[i],
+				where='mid',
+				label=fit[5] if fit[5] else fit[0],
+			)
 
 	decorate_plot(args)
 	
@@ -1184,7 +1189,7 @@ if __name__ == '__main__':
 		type=str,
 		nargs="+",
 		action=cli.MergeAction,
-		const = ((str, int, str), ("", 100, "png")),
+		const = ((str, int, str, float, float), ("", 100, "png", 0.0, 0.0)),
 		default=False,
 		help="save figure to filename"
 	)
@@ -1309,11 +1314,18 @@ if __name__ == '__main__':
 			return '{'+key+'}'
 	
 	fig = plt.gcf()
+
+	if args.save_fig:
+		if args.save_fig[4]:
+			fig.set_figheight(args.save_fig[4])
+		if args.save_fig[3]:
+			fig.set_figwidth(args.save_fig[3])
+
 	title = fig.axes[0].get_title()
 	plt.title(title.format_map(ddict(title_keys)))
 
 	if args.save_fig:
-		fname, dpi, fmt = args.save_fig
+		fname, dpi, fmt, hi, wi = args.save_fig
 		if fname:
 			if '.' not in fname:
 				fname = '{}.{}'.format(fname, fmt)

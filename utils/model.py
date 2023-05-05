@@ -651,7 +651,15 @@ quadratic_inverse = function_archetype(
 iquad = quadratic_inverse
 
 def powerlaw_guess(x,y,bounds):
-	return [y.max() / x.max(), 1.0]
+	# return [y.max() / x.max(), 1.0]
+	logYfi = math.log(y[-1]/y[0])
+	logXfi = math.log(x[-1]/x[0])
+	m_guess = logYfi/logXfi
+	if y[0] > y[-1]:
+		b_guess = y[0] / (x[0] ** m_guess)
+	else:
+		b_guess = y[-1] / (x[-1] ** m_guess)
+	return [b_guess, m_guess]
 powerlaw = function_archetype(
 	name    = "powerlaw",
 	formula = "b*x^m",

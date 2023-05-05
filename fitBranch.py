@@ -730,6 +730,8 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 			fit_model_components.append(model.constant([[0,np.inf]]))
 		if "e" in ref.background:
 			fit_model_components.append(model.exponential())
+		if "p" in ref.background:
+			fit_model_components.append(model.powerlaw())
 		for bounds in ref.gaus_bounds:
 			fit_model_components.append(model.gaus(bounds))
 		for bounds in ref.smono_bounds:
@@ -977,6 +979,8 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 			fit_model_components.append(model.constant([[0,np.inf]]))
 		if "e" in background:
 			fit_model_components.append(model.exponential())
+		if "p" in background:
+			fit_model_components.append(model.powerlaw())
 
 		# store number of parameters used by background components
 		n_bg_parameters = sum([_.npars for _ in fit_model_components])
@@ -1012,25 +1016,27 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 		# fit the binned data
 		popt, perr, chi2, ndof, pcov = fit_model.fit(midpoints, counts, need_cov = True)
 		if verbosity:
-			line_template = "{}| {:>6}| {:>8}| {:>8}| {:>14}| {:>14}"
+			col_sep = "\t"
+			line_template    = col_sep.join(["{}","{:>6}","{:>8f}","{:>8f}","{:>20.12f}","{:>20.12f}"])
+			line_template_ex = col_sep.join(["{}","{:>6}","{:>8}" ,"{:>8}" ,"{:>20}"    ,"{:>20}"    ])
 			print("")
 			print("model performance: chi2/ndof = {}/{} = {}".format(
-				round(chi2,DISPLAY_PRECISION),
+				float(chi2),
 				ndof,
-				round(chi2/ndof,DISPLAY_PRECISION),
+				float(chi2/ndof),
 				))
 			print("model parameters")
-			print(line_template.format("f","par","lo bnd","hi bnd","popt","perr"))
+			print(line_template_ex.format("f","par","lo bnd","hi bnd","popt","perr"))
 			ipar = 0
 			for ic,component in enumerate(fit_model_components):
 				for ip,pname in enumerate(component.pnames):
 					print(line_template.format(
 						ic,
 						pname,
-						round(component.bounds[ip][0],DISPLAY_PRECISION),
-						round(component.bounds[ip][1],DISPLAY_PRECISION),
-						round(popt[ipar],DISPLAY_PRECISION),
-						round(perr[ipar],DISPLAY_PRECISION),
+						float(component.bounds[ip][0]),
+						float(component.bounds[ip][1]),
+						float(popt[ipar]),
+						float(perr[ipar]),
 					))
 					ipar += 1
 			if verbosity >= 2:
@@ -1042,6 +1048,7 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 			print("{} | {:<12} | {:<12} | {:<12}".format("i","c","sigma (bins)","integral = c*sigma*sqrt(2*pi)"))
 			bin_width = edges[1]-edges[0]
 			total_gaussian_integrals = 0
+			
 			for ig,g in enumerate(gaus):
 				this_c        = popt[n_bg_parameters + 3*ig + 0]
 				this_sigma    = popt[n_bg_parameters + 3*ig + 2] / bin_width
@@ -1050,8 +1057,21 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 				print("{} | {:>12.2f} | {:>12.2f} | {:>12.2f}".format(ig, this_c, this_sigma, this_integral))
 			print("sum of integrals of gaussians: {:.2f}".format(total_gaussian_integrals))
 
+			print("\ngaussian component fit results:")
+			for ig,g in enumerate(gaus):
+				print("\t".join(map("{:.8f}".format,[
+					popt[n_bg_parameters + 3*ig + 0],
+					perr[n_bg_parameters + 3*ig + 0],
+					popt[n_bg_parameters + 3*ig + 1],
+					perr[n_bg_parameters + 3*ig + 1],
+					popt[n_bg_parameters + 3*ig + 2],
+					perr[n_bg_parameters + 3*ig + 2],
+				])))
+			print("")
+
 			xf_cov = False
 			xf_par = False
+
 
 	return [
 		[nbins, edges, midpoints, counts],
