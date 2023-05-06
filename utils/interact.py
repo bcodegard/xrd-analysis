@@ -3,159 +3,149 @@ Class for handling user input in matplotlib window
 """
 
 
-# message templates for debug info on key press events
-MSG_KEY_PRESS   = "+   {:>24}"
-MSG_KEY_RELEASE = "-   {:<24}"
 
-
-# delimiter character for multi-key events,
-# E.G. "ctrl+shift+a"
-KEY_COMBO_DELIMITER = "+"
-
-# rename keys before processing combinations.
-# necessary because ctrl shows up as "control" when not part of a combo
-# but as "ctrl" while part of a combo. who thought that was a good idea?
-KEY_RENAME = {
-	"control" : "ctrl"  , # I cannot fathom the reason for this
-	" "       : "space" , # understandable, but I prefer 'space'
-	"meta"    : "alt"   , # seriously, why
-}
-
-COMBO_KEYS = {
-	"ctrl" ,
-	"alt"  ,
-}
-
-def parse_keys(event):
-	# print("\n\n")
-	# print(repr(event.key))
-	keys_raw = event.key.split(KEY_COMBO_DELIMITER)
-	keys = [KEY_RENAME.get(_,_) for _ in keys_raw]
-
-	# since '+' is both the delimiter and a key, and that's not escaped,
-	# we have a headache. for now, just print a warning if there are
-	# empty strings in keys, as that's how the '+' key is currently parsed.
-	if not all(keys):
-		print("Warning: empty key found in event {}".format(event.key))
-
-	# I can't find any documentation on what the order represents, but
-	# best as I can tell, the last key listed is the one being changed,
-	# and the preceeding keys are the ones currently being held down.
-	changed = keys[-1]
-	held    = keys[:-1]
-
-	return changed, held
+def button_token(button, modifiers):
+	if modifiers is None:
+		modifiers = ()
+	if isinstance(modifiers, str):
+		modifiers = (modifiers,)
+	return (button,) + tuple(sorted(modifiers))
 
 
 
-
-
-
-class MPLInteract(object):
-
+class FigureInteractor(object):
 
 	def __init__(self, figure, verbosity=0):
-		
-		self._fig = figure
-
 		self.verbosity = verbosity
-
+		self._fig = figure
+		self._mpl_connect()
 		self._setup()
-		self._connect()
 
-	def _setup(self):
-
-		# key combo tracking
-		self._in_combo  = False # whether there's a combo ongoing
-		self._combo_key = None  # key that started current combo
-		self._combo     = None  # list of events in current combo
-
-	def _connect(self):
+	def _mpl_connect(self):
 		self._fig.canvas.mpl_connect('key_press_event'  , self._on_key_press  )
 		self._fig.canvas.mpl_connect('key_release_event', self._on_key_release)
 
+		self._fig.canvas.mpl_connect('button_press_event'  , self._on_button_press  )
+		self._fig.canvas.mpl_connect('button_release_event', self._on_button_release)
+		# self._fig.canvas.mpl_connect('motion_notify_event' , self._on_motion_notify )
 
 
+	def _setup(self):
+		
+		self._key_bindings = {}
+
+		self._button_press_bindings = {}
+		self._button_release_bindings = {}
+
+		self._last_button_press = {}
+
+
+	def bind_key(self, key, recipient):
+		if key not in self._key_bindings:
+			self._key_bindings[key] = []
+		self._key_bindings[key].append(recipient)
+
+	def unbind_key(self, key):
+		del self._key_bindings[key]
+
+	def unbind_all_keys(self):
+		self._key_bindings.clear()
 
 	def _on_key_press(self, event):
-		# parse event data
-		changed, held = parse_keys(event)
-
-		# print("press {}".format(repr(event.key)))
-		# print("press     {:>16}   holding {}".format(repr(changed), repr(held)))
-
-		# if not in combo, and pressed key is a combo key, start a combo
-		if not self._in_combo:
-			if changed in COMBO_KEYS:
-				self._start_combo(changed)
-
-		# if still not in combo, return
-		if not self._in_combo:
-			return
-
-		# append the event to the current combo
-		self._combo.append((changed, held))
-
+		if self.verbosity >= 2:
+			print("key pressed: {}".format(event.key))
+		for recipient in self._key_bindings.get(event.key, ()):
+			# if a recipient returns something truthy, this indicates
+			# that the event should not be given to any further
+			# recipients.
+			if recipient(event):
+				break
 
 	def _on_key_release(self, event):
-		# parse event data
-		changed, held = parse_keys(event)
+		if self.verbosity >= 2:
+			print("key released: {}".format(event.key))
 
-		# print("release {}".format(repr(event.key)))
-		# print("release   {:<16}   holding {}".format(repr(changed), repr(held)))
 
-		# if not in combo, we don't care
-		if not self._in_combo:
+	def bind_button_press(self, button, recipient, modifiers = None):
+		token = button_token(button, modifiers)
+		if token not in self._button_press_bindings:
+			self._button_press_bindings[token] = []
+		self._button_press_bindings[token].append(recipient)
+
+	def bind_button_release(self, button, recipient, modifiers = None):
+		token = button_token(button, modifiers)
+		if token not in self._button_release_bindings:
+			self._button_release_bindings[token] = []
+		self._button_release_bindings[token].append(recipient)
+
+	def unbind_button_press(self, button, modifiers = None):
+		token = button_token(button, modifiers)
+		del self._button_press_bindings[token]
+
+	def unbind_button_release(self, button, modifiers = None):
+		token = button_token(button, modifiers)
+		del self._button_release_bindings[token]
+
+	def _on_button_press(self, event):
+
+		# store as the last button press event for this button
+		# so that release events have access to where they started
+		self._last_button_press[event.button.value] = event
+
+		# press must be in axes
+		if not event.inaxes:
 			return
 
-		# if changed key is not a combo key, we don't care
-		if changed not in COMBO_KEYS:
+		# must not have any mode selected in navigation toolbar
+		if event.canvas.toolbar.mode != "":
 			return
 
-		# if released combo key is not the one that started the combo, 
-		# do nothing.
-		if changed != self._combo_key:
-			return
+		# construct token
+		token = button_token(event.button.value, event.modifiers)
+		# print(token)
+		# print("button_press   {} {:.1f} {:.1f} {}".format(event.button, event.xdata, event.ydata, event.modifiers))
 
-		# end the combo when the starter key is released.
-		self._end_combo()
+		# call recipients
+		for recipient in self._button_press_bindings.get(token,()):
+			if recipient(event):
+				break
 
-
-
-
-	def _start_combo(self, combo_key):
-		# print("\nstart combo with modifier {}".format(combo_key))
-		self._in_combo  = True
-		self._combo_key = combo_key
-		self._combo     = []
-
-	def _end_combo(self):
-		# print("end combo with modifier {}".format(self._combo_key))
+	def _on_button_release(self, event):
 		
-		# run the combo
-		self._run_combo(self._combo_key, self._combo)
+		# fetch and then clear last button press with same button value
+		press = self._last_button_press.get(event.button.value, None)
+		self._last_button_press[event.button.value] = None
 
-		# clean up and return to not in combo state
-		self._in_combo  = False
-		self._combo_key = None
-		self._combo     = None
+		# release must be in axes
+		if not event.inaxes:
+			return
 
-	def _run_combo(self, combo_key, combo):
-		print("base class just prints combo information upon combo completion")
-		print("combo key: {}".format(combo_key))
-		print("combo: {}".format(combo))
-		print("")
+		# must not have mode selected in navigation toolbar
+		# print(repr(event.canvas.toolbar.mode))
+		if event.canvas.toolbar.mode != "":
+			return
 
+		# press and release must be in same axes
+		if press.inaxes is not event.inaxes:
+			return
 
+		# construct token for button and modifiers
+		token = button_token(event.button.value, event.modifiers)
 
+		# press and release must have identical token
+		if token != button_token(press.button.value, press.modifiers):
+			return
+		
+		# print(token)
+		# print("button_release {} {:.1f} {:.1f} {}".format(event.button, event.xdata, event.ydata, event.modifiers))
 
+		# call recipients
+		for recipient in self._button_release_bindings.get(token,()):
+			if recipient(press, event):
+				break
 
-
-
-class FitMPLI(MPLInteract):
-	"""docstring for FitMPLI"""
-	
-	def __init__(self, figure, axes, verbosity=3):
-		super(FitMPLI, self).__init__(figure, verbosity)
-		self._ax = axes
+	# def _on_motion_notify(self, event):
+	# 	if not event.inaxes:
+	# 		return
+	# 	print("motion_notify  {} {:.1f} {:.1f} {}".format(event.button, event.xdata, event.ydata, event.key))
 
