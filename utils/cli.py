@@ -48,20 +48,54 @@ def infer_dest(option_string, prefix_chars='-'):
 
 
 
-def has_positional_args(arg_set):
+def has_positional_args(call):
 	"""Checks whether the argument set defines a dataset for plotting.
 	This is determined by whether the first argument starts with a dash.
 	If it does, then it has no positional arguments, and therefore it
 	has not dataset."""
 
-	# handle the case where arg_set is empty
-	if not arg_set:
+	# handle the case where call is empty
+	if not call:
 		return False
 
 	# if the first entry starts with a dash, then there's no dataset.
-	return not arg_set[0].startswith("-")
+	return not call[0].startswith("-")
 
+DEFAULT_DELIMITERS = ["AND", "and", "+", ","]
+def split_argument_sets(args, delimiters=None, merge_last_incomplete=True):
+	"""Split args into a list of calls separated by each argument
+	that matches any delimeter. If merge_last_incomplete, and the
+	last call has no positional arguments, discard it and add its
+	arguments to the second-to-last call."""
 
+	# default to DEFAULT_DELIMITERS if not given
+	if delimiters is None:
+		delimiters = DEFAULT_DELIMITERS
+
+	# accept single string for delimiters
+	if isinstance(delimiters, str):
+		delimiters = [delimiters]
+
+	# split args into a list of calls separated by any delimeter
+	calls     = []
+	this_call = []
+	for arg in args:
+		if arg in delimiters:
+			calls.append(this_call)
+			this_call = []
+		else:
+			this_call.append(arg)
+	calls.append(this_call)
+
+	# if the last call is incomplete (no positional args supplied)
+	# and merge_last_incomplete = True, then remove the last call and
+	# add its arguments to the second-to-last call.
+	if merge_last_incomplete:
+		if not has_positional_args(calls[-1]):
+			trailing_call = calls.pop(-1)
+			calls[-1] = calls[-1] + trailing_call
+
+	return calls
 
 
 

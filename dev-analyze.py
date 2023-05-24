@@ -111,6 +111,14 @@ iseq = lambda x,y,eps=1e-9:abs(x-y)<eps
 
 
 
+class ddict(dict):
+	"""dict sublass which returns "{key}" for missing key.
+	Used for partial completion of string formatting."""
+	def __missing__(self,key):
+		return '{'+key+'}'
+
+
+
 class performer(object):
 	"""Performs a single piece of specified analysis,
 	within the supplied context of a routine."""
@@ -1241,64 +1249,26 @@ if __name__ == '__main__':
 
 	# dict of format strings to replace in figure title
 	title_keys = {}
-	
-	# todo: unify this behavior.
-	# 
-	# separate functionality for composing arg_sets and fulfilling.
-	# compose arg_sets whether or not ARG_MULTI is present, and then
-	# the code that runs each argument set does not need to differ
-	# whether or not there is more than one set.
 
-	# at least one call delimeter argument is present
-	if any(_ in sys.argv for _ in ARG_MULTI):
-		
-		arg_sets = []
-		current_set = []
-		
-		for arg in sys.argv[1:]:
-			if arg in ARG_MULTI:
-				arg_sets.append(current_set)
-				current_set = []
-			else:
-				current_set.append(arg)
-		arg_sets.append(current_set)
-		nsets = len(arg_sets)
+	# split arguments into calls separated by any delimiter argument,
+	# defined by cli.DEFAULT_DELIMITERS
+	calls = cli.split_argument_sets(sys.argv[1:])
+	for ic,c in enumerate(calls):
+		print(ic, c)
 
-		# if the last argument set has no dataset (no fit argument)
-		if not cli.has_positional_args(arg_sets[-1]):
-			
-			# remove the last argument set from the list
-			trailing_set = arg_sets.pop(-1)
+	# process each set in order
+	nsets = len(calls)
+	for icall,call in enumerate(calls):
+		this_args = parser.parse_args(call)
+		this_args.fits = [_ for _ in this_args.fits if _[0] is not None]
+		this_counts, this_edges = main(this_args, icall, nsets)
+		if this_args.check_consistent:
+			check_counts += this_counts
+			check_edges  += this_edges
 
-			# add its arguments to the second-to-last set,
-			# which is now the last entry in the list since we removed
-			# the last set.
-			arg_sets[-1] = arg_sets[-1] + trailing_set
-
-		# process each set in order
-		for i,arg_set in enumerate(arg_sets):
-			this_args = parser.parse_args(arg_set)
-			this_args.fits = [_ for _ in this_args.fits if _[0] is not None]
-			this_counts, this_edges = main(this_args, i, nsets)
-			if this_args.check_consistent:
-				check_counts += this_counts
-				check_edges  += this_edges
-
-
-
-		# copy last arg set as reference for plotting related args
-		# todo: better handling of display args across sets
-		args = this_args
-
-	# no call delimeter argument is present
-	else:
-		args = parser.parse_args()
-		# remove fit args with empty expression
-		args.fits = [_ for _ in args.fits if _[0] is not None]
-		counts, edges = main(args)
-		if args.check_consistent:
-			check_counts += counts
-			check_edges  += edges
+	# take display arguments only from final call
+	# todo: better handling of display args across calls
+	last_args = this_args
 
 	# if requested by any sub-call, check whether each pair of spectra is consistent
 	if check_counts:
@@ -1331,36 +1301,28 @@ if __name__ == '__main__':
 			title_keys['c2d']  = chi2/ndof
 
 
-	class ddict(dict):
-		"""dict sublass which returns "{key}" for missing key.
-		Used for partial completion of string formatting."""
-		def __missing__(self,key):
-			return '{'+key+'}'
-	
+	# decorate figure and save and/or show if as requested 
+	# by the final argument set.
 	fig = plt.gcf()
 
-	if args.save_fig:
-		if args.save_fig[4]:
-			fig.set_figheight(args.save_fig[4])
-		if args.save_fig[3]:
-			fig.set_figwidth(args.save_fig[3])
+	if last_args.save_fig:
+		if last_args.save_fig[4]:
+			fig.set_figheight(last_args.save_fig[4])
+		if last_args.save_fig[3]:
+			fig.set_figwidth(last_args.save_fig[3])
 
 	title = fig.axes[0].get_title()
 	plt.title(title.format_map(ddict(title_keys)))
 
-	if args.save_fig:
-		fname, dpi, fmt, hi, wi = args.save_fig
+	if last_args.save_fig:
+		fname, dpi, fmt, hi, wi = last_args.save_fig
 		if fname:
 			if '.' not in fname:
 				fname = '{}.{}'.format(fname, fmt)
 			plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
 
-	if args.show:
+	if last_args.show:
 		plt.show()
 
-
-
-
-
-
-
+	# exit without error
+	sys.exit(0)

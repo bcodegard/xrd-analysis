@@ -58,14 +58,6 @@ SMONO_DEFAULTS = (3,-np.inf,np.inf,0,np.inf)
 FIT_CSV_TYPELIST = [int, str, float, float, int, str, int, int, str, int, str]
 XF_CSV_TYPELIST  = [str, int, float]
 
-# delimiters for argparse
-AP_DELIMITER = ","
-AN_DELIMITER = "="
-
-# argument for separating independent fit specifications to be plotted
-# on the same axes
-ARG_MULTI = "AND"
-
 
 
 
@@ -1758,84 +1750,24 @@ if __name__ == '__main__':
 	parser.add_argument("-v"     ,action='count',default=0,help="verbosity")
 
 
+	# split arguments into calls separated by any delimiter argument,
+	# defined by cli.DEFAULT_DELIMITERS
+	calls = cli.split_argument_sets(sys.argv[1:])
 
-	# indicates multiple argument sets -> multiple plots, put on same plot
-	if ARG_MULTI in sys.argv:
+	# call main with each set of arguments in turn,
+	# additionally communicating that each call is
+	# part of a multi-call execution
+	for i,call in enumerate(calls):
+		this_args = vars(parser.parse_args(call))
+		main(
+			config.deep_merge(this_args, cfg),
+			# todo: better behavior in main when part of multiple set call
+			suspend_show = True,
+			colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
+		)
 
-		# todo better color handling
-		# todo better label/legend handling
-		# todo better axis labels and title handling
-		# todo better display axis bounds handling
+	# show figure after all calls have been processed
+	plt.show()
 
-		# list of complete argument sets
-		arg_sets = []
-		
-		# current argument set being constructed
-		this_set = []
-
-		# print(sys.argv)
-		# iterate through argv
-		for a in sys.argv[1:]:
-
-			# delimiter
-			if a == ARG_MULTI:
-
-				# add current set to list of complete sets
-				# print(this_set)
-				arg_sets.append(this_set)
-
-				# reset current set
-				this_set = []
-
-			# not delimiter
-			else:
-				# add to current set
-				this_set.append(a)
-
-		# add last set to list of complete sets
-		arg_sets.append(this_set)
-
-		# check whether the last set has any dataset info.
-		# 
-		# this allows for the last set to have a trailing AND without error,
-		# which simplifies the construction of complex calls. 
-		# 
-		# we also want to be able to put formatting/output arguments after
-		# the last call, so instead of discarding the last set if it has
-		# no dataset arguments, we instead add its arguments to the previous call.
-
-		# check whether the last argument set has a dataset defined.
-		if not cli.has_positional_args(arg_sets[-1]):
-			
-			# remove the last argument set from the list
-			trailing_set = arg_sets.pop(-1)
-
-			# add its arguments to the second-to-last set,
-			# which is now the last entry in the list since we removed
-			# the last set.
-			arg_sets[-1] = arg_sets[-1] + trailing_set
-
-
-		
-		# call main with each set of arguments in turn,
-		# additionally communicating that each call is
-		# part of a multi-call execution
-		for i,arg_set in enumerate(arg_sets):
-			this_args = vars(parser.parse_args(arg_set))
-			main(
-				config.deep_merge(this_args, cfg),
-
-				# todo: better behavior in main when part of multiple set call
-				suspend_show = True,
-				
-				colors = {"d":COLOR_SEQ[i], "p":COLOR_SEQ[i]},
-			)
-
-		# show figure with all calls' data
-		plt.show()
-
-	# single call
-	else:
-		args = vars(parser.parse_args())
-		# main(args)
-		main(config.deep_merge(args, cfg))
+	# exit without error
+	sys.exit(0)
