@@ -46,6 +46,25 @@ def infer_dest(option_string, prefix_chars='-'):
 
 
 
+
+
+def has_positional_args(arg_set):
+	"""Checks whether the argument set defines a dataset for plotting.
+	This is determined by whether the first argument starts with a dash.
+	If it does, then it has no positional arguments, and therefore it
+	has not dataset."""
+
+	# handle the case where arg_set is empty
+	if not arg_set:
+		return False
+
+	# if the first entry starts with a dash, then there's no dataset.
+	return not arg_set[0].startswith("-")
+
+
+
+
+
 # custom argparse.Action action classes and associated objects
 
 class MultipleDestAction(argparse.Action):

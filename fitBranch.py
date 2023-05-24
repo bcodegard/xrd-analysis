@@ -1794,6 +1794,28 @@ if __name__ == '__main__':
 
 		# add last set to list of complete sets
 		arg_sets.append(this_set)
+
+		# check whether the last set has any dataset info.
+		# 
+		# this allows for the last set to have a trailing AND without error,
+		# which simplifies the construction of complex calls. 
+		# 
+		# we also want to be able to put formatting/output arguments after
+		# the last call, so instead of discarding the last set if it has
+		# no dataset arguments, we instead add its arguments to the previous call.
+
+		# check whether the last argument set has a dataset defined.
+		if not cli.has_positional_args(arg_sets[-1]):
+			
+			# remove the last argument set from the list
+			trailing_set = arg_sets.pop(-1)
+
+			# add its arguments to the second-to-last set,
+			# which is now the last entry in the list since we removed
+			# the last set.
+			arg_sets[-1] = arg_sets[-1] + trailing_set
+
+
 		
 		# call main with each set of arguments in turn,
 		# additionally communicating that each call is

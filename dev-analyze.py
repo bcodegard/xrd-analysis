@@ -45,7 +45,8 @@ DFILE_NUMERIC = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
 DIR_DATA_DEFAULT = "../xrd-analysis/data/scint-experiment/root"
 DIR_DATA = {
 	"root":"../xrd-analysis/data/scint-experiment/root",
-	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz-low-thresh",
+	# "npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz-low-thresh",
+	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/dirpi/npz",
 }
 
 # recognized file extensions and the default one
@@ -1241,10 +1242,19 @@ if __name__ == '__main__':
 	# dict of format strings to replace in figure title
 	title_keys = {}
 	
+	# todo: unify this behavior.
+	# 
+	# separate functionality for composing arg_sets and fulfilling.
+	# compose arg_sets whether or not ARG_MULTI is present, and then
+	# the code that runs each argument set does not need to differ
+	# whether or not there is more than one set.
+
 	# at least one call delimeter argument is present
 	if any(_ in sys.argv for _ in ARG_MULTI):
+		
 		arg_sets = []
 		current_set = []
+		
 		for arg in sys.argv[1:]:
 			if arg in ARG_MULTI:
 				arg_sets.append(current_set)
@@ -1254,6 +1264,18 @@ if __name__ == '__main__':
 		arg_sets.append(current_set)
 		nsets = len(arg_sets)
 
+		# if the last argument set has no dataset (no fit argument)
+		if not cli.has_positional_args(arg_sets[-1]):
+			
+			# remove the last argument set from the list
+			trailing_set = arg_sets.pop(-1)
+
+			# add its arguments to the second-to-last set,
+			# which is now the last entry in the list since we removed
+			# the last set.
+			arg_sets[-1] = arg_sets[-1] + trailing_set
+
+		# process each set in order
 		for i,arg_set in enumerate(arg_sets):
 			this_args = parser.parse_args(arg_set)
 			this_args.fits = [_ for _ in this_args.fits if _[0] is not None]
@@ -1261,6 +1283,8 @@ if __name__ == '__main__':
 			if this_args.check_consistent:
 				check_counts += this_counts
 				check_edges  += this_edges
+
+
 
 		# copy last arg set as reference for plotting related args
 		# todo: better handling of display args across sets
