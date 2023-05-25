@@ -43,3 +43,72 @@ figure_directory:
   base: [".", "figs"]
 
   temp: ["{base}", "temp"]
+
+
+# shorthand for branch names, using regular expressions.
+# if an expression matching the key is given as a branch name,
+# the corresponding value will be substituted, after formatting
+# with any captured groups in the key.
+# 
+# the implementation is described by the following pseudocode.
+# the actual implementation will be in utils.expression
+# (not yet implemented)
+# 
+# modified_form = original_form
+# for (match,replace) in (expr_this_filetype + expr_shared):
+#     modified_form = re.sub(match, replace.format(**context), modified_form)
+#
+# this means that while the system is only intended to provide shorthand
+# for branch names (E.G. "a4" for "area_2988_4") it will operate on 
+# mathematical expressions just as well, so shorthand for them should work.
+# E.G.: shorthand for commonly used cuts, "ch1": "channel==1"
+# or derivatives: "d_(\w+)": "{0}[1:]-{0}[:-1]"
+#  
+# also note that we're using single qoutes, not double quotes, to define
+# the regular expressions. this tells yaml to not process any escapes
+# and just take the literal content of the string.
+shorthand:
+
+  # it is assumed that the patterns here should not start or end a match
+  # in the middle of a word, to prevent unintended replacements. this is
+  # achieved by placing each expression between two word boundary tokens.
+  # 
+  # '(expr)' will become '\b(expr)\b', et cetera.
+  enforce_word_boundary: true
+
+  # shorthand that should be used for all datasets.
+  # currently empty.
+  shared: {}
+
+  # shortand define per file type (file extension)
+  by_file_type:
+
+    # root files from processing raw DRS4 output.
+    # 
+    # context variables for root files:
+    # drs  = DRS4 numeric board ID
+    # chan = first channel found among branches. for use when there
+    #        is a channel number in the branch name, but the branch
+    #        has identical contents for each channel.
+    root:
+      'a_?([0-9]+)'       : 'area_{drs}_{0}'
+      'A_?([0-9]+)'       : '(area_{drs}_{0}*0.001)'
+
+      't_?([0-9]+)'       : 'tMax_{drs}_{0}'
+      '[tT]m_?([0-9]+)'   : 'tMax_{drs}_{0}'
+      '[tT]s_?([0-9]+)'   : 'tStart_{drs}_{0}'
+      '[tT]e_?([0-9]+)'   : 'tEnd_{drs}_{0}'
+
+      '[vV]_?([0-9]+)'    : 'vMax_{drs}_{0}'
+      '[wW]_?([0-9]+)'    : 'width_{drs}_{0}'
+      '[oO]_?([0-9]+)'    : 'offset_{drs}_{0}'
+      '[nN]_?([0-9]+)'    : 'noise_{drs}_{0}'
+      '[sS]_?([0-9]+)'    : 'scaler_{drs}_{0}'
+      
+      'T_?([0-9]+)'       : 'timestamp_{drs}_{0}'
+      '[tT]'              : 'timestamp_{chan}_{0}'
+
+      '[vV]{2}_?([0-9]+)' : 'voltages_{drs}_{0}'
+      '[tT]{2}_?([0-9]+)' : 'times_{drs}_{0}'
+
+    npz: []

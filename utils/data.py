@@ -166,6 +166,19 @@ def isymlog(y, l):
 	else:
 		return x * l
 
+def edges_lin(xmin, xmax, nbins):
+	return np.linspace(xmin, xmax, nbins+1)
+
+def edges_log(xmin, xmax, nbins):
+	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
+
+def edges_symlog(xmin, xmax, nbins, l=1):
+	slxmin = symlog(xmin, l)
+	slxmax = symlog(xmax, l)
+	y = np.linspace(slxmin, slxmax, nbins+1)
+	return isymlog(y, l)
+
+
 def inrange(arr, lo, hi, lclosed=False, rclosed=False):
 	pieces = []
 	if lo not in [None, -np.inf]:
@@ -176,40 +189,6 @@ def inrange(arr, lo, hi, lclosed=False, rclosed=False):
 		return pieces[0]
 	else:
 		return np.logical_and(*pieces)
-
-
-
-
-# Accessor base class and subclasses
-# Currently, no Accessor class except the base class is implemented.
-# To create a new Accessor, sublass the Accessor class and overwrite the
-# Accessor.get method to interface with your data.
-
-class Accessor(object):
-	"""base class for Accessor types"""
-	def __init__(self):
-		pass
-	def __nonzero__(self):
-		return True
-	def get(self, key_or_keys):
-		return False
-
-# class RootFileAccessor(Accessor):
-# 	"""Accessor object for loading branches as needed from root file"""
-# 	def __init__(self, tree, rootkey=None):
-# 		super(RootFileAccessor, self).__init__()
-# 		self.tree = tree
-# 		self.rootkey = rootkey
-# 	def get(self, key_or_keys):
-# 		...
-# 	def set(self, item_or_items):
-# 		...
-
-# class MMapAccessor(Accessor):
-# 	"""Accessor object for accessing arrays from memory-mapped disk storage"""
-# 	def __init__(self, ):
-# 		super(MMapAccessor, self).__init__()
-# 		...
 
 
 

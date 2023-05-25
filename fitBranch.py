@@ -100,58 +100,7 @@ def csv_format_cuts(cuts):
 	# return cut_branches, cut_bounds
 	return cut_flat
 
-def edges_lin(xmin, xmax, nbins):
-	return np.linspace(xmin, xmax, nbins+1)
 
-def edges_log(xmin, xmax, nbins):
-	return np.logspace(math.log(xmin,10), math.log(xmax,10), nbins+1)
-
-def edges_symlog(xmin, xmax, nbins, l=1):
-	slxmin = symlog(xmin, l)
-	slxmax = symlog(xmax, l)
-	y = np.linspace(slxmin, slxmax, nbins+1)
-	return isymlog(y, l)
-
-def symlog(x, l):
-
-	isscalar = np.isscalar(x)
-	x = np.atleast_1d(x)
-
-	y = np.zeros(x.shape)
-	
-	ftr_pos = (x >  l)
-	ftr_neg = (x < -l)
-	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
-	
-	b=math.e/l
-	y[ftr_pos] =  np.log( b*x[ftr_pos])
-	y[ftr_neg] = -np.log(-b*x[ftr_neg])
-	y[ftr_lin] = x[ftr_lin] * (b/math.e)
-	
-	if isscalar:
-		return y[0]
-	else:
-		return y
-
-def isymlog(y, l):
-	
-	isscalar = np.isscalar(y)
-	y = np.atleast_1d(y)
-
-	x = np.zeros(y.shape)
-
-	ftr_pos = (y >  1)
-	ftr_neg = (y < -1)
-	ftr_lin = np.logical_not(np.logical_or(ftr_pos,ftr_neg))
-
-	x[ftr_pos] =  np.exp( y[ftr_pos] - 1)
-	x[ftr_neg] = -np.exp(-y[ftr_neg] - 1)
-	x[ftr_lin] = y[ftr_lin]
-
-	if isscalar:
-		return x[0] * l
-	else:
-		return x * l
 
 
 # analysis stages
@@ -674,11 +623,11 @@ def perform_fit(args,verbosity,fit_data,fit,vars_fit,xlog,density):
 	# if xlog argument supplied at least twice, bins are calculated in log space.
 	# warning: fitting to log bins has not been confirmed to be accurate.
 	if args["xsymlog"]:
-		edges = edges_symlog(edgeLo, edgeHi, nbins, args["xsymlog"])
+		edges = data.edges_symlog(edgeLo, edgeHi, nbins, args["xsymlog"])
 	elif xlog>1:
-		edges = edges_log(edgeLo, edgeHi, nbins)
+		edges = data.edges_log(edgeLo, edgeHi, nbins)
 	else:
-		edges = edges_lin(edgeLo, edgeHi, nbins)
+		edges = data.edges_lin(edgeLo, edgeHi, nbins)
 	midpoints = 0.5 * (edges[1:] + edges[:-1])
 	# TODO: better handling of density: should be display-only, not at data level.
 	if density:
@@ -1339,11 +1288,11 @@ def main(args, suspend_show=False, colors={}):
 		if not nbins:
 			nbins = 50
 		if args["xsymlog"]:
-			pBins = [edges_symlog(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins, args["xsymlog"]) for i in range(n_ds)]
+			pBins = [data.edges_symlog(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins, args["xsymlog"]) for i in range(n_ds)]
 		elif xlog>1:
-			pBins = [edges_log(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins) for i in range(n_ds)]
+			pBins = [data.edges_log(min((pLo[i]),(pData[i][pData[i]>0]).min()), pHi[i], nbins) for i in range(n_ds)]
 		else:
-			pBins = [edges_lin(pLo[i], pHi[i], nbins) for i in range(n_ds)]
+			pBins = [data.edges_lin(pLo[i], pHi[i], nbins) for i in range(n_ds)]
 
 		gs = display.pairs2d(
 			pData,

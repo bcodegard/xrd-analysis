@@ -134,3 +134,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+notes-interactive-ui.txt
+notes-development.txt
