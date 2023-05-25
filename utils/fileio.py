@@ -565,6 +565,103 @@ def load_xf(file):
 
 
 
+# data file interface
+# base class and classes for specific file types
+
+class DFileInterface(object):
+	MSG_MISSING_BRANCHES = "could not find all requested keys in file {}. Existing keys are:"
+	ERR_MISSING_BRANCHES = "Could not load all requested branches"
+
+class DFIRoot(DFileInterface):
+	ftype = "root"
+
+	def __init__(self, df):
+		self._df = df
+		self._file = ...
+		self._keys = None
+		self._channels = None
+		self._drsnum = None
+	
+	def keys(self):
+		if self._keys is None:
+			self._keys = get_keys(self._df)
+		return self._keys
+	
+	def channels(self):
+		if self._channels is None:
+			self._channels = sorted(_.rpartition("_")[2] for _ in self.keys() if _.startswith("noise_"))
+		return self._channels
+
+	def load_branches(self, br, missing="warn"):
+		return load_branches(self._df,br,missing=missing)
+
+	def drsnum(self):
+		if self._drsnum is None:
+			test_branch = next(_ for _ in self.keys() if _.startswith("noise_"))
+			self._drsnum = test_branch.partition('_')[2].partition('_')[0]
+		return self._drsnum
+
+	def branch_suffix(self, ch):
+		return "_{bd}_{ch}".format(self.drsnum(), ch)
+
+class DFINpz(DFileInterface):
+	ftype = "npz"
+	branch_suffix = "_{ch}"
+
+	def __init__(self, df):
+		self._df = df
+		self._file = np.load(df)
+		self._keys = None
+		self._channels = None
+
+	def __del__(self):
+		self._file.close()
+	
+	def keys(self):
+		if self._keys is None:
+			self._keys = list(self._file.keys())
+		return self._keys
+	
+	def channels(self):
+		if self._channels is None:
+			# placeholder. todo: implement a check for this.
+			self._channels = (0,1,2,3,4,5,6,7)
+		return self._channels
+
+	def load_branches(self, br, missing="warn"):
+		branches = {}
+		for bname in br:
+			branch = self._file.get(bname)
+			if branch is not None:
+				branches[bname] = branch
+
+		if missing in ("warn", "raise"):
+			if not set(br).issubset(set(branches.keys())):
+				print(self.MSG_MISSING_BRANCHES.format(self._df))
+				print(self.keys())
+				if missing == "raise":
+					raise ValueError(ERR_MISSING_BRANCHES)
+
+		return branches
+
+
+	def branch_suffix(self, ch):
+		return "_{ch}".format(ch)
+
+DFILE_INTERFACES = {
+	"root": DFIRoot,
+	"npz" : DFINpz,
+}
+ERR_NO_FILE_EXT      = "No file extension in file {}"
+ERR_UNKNOWN_FILE_EXT = "Unrecognized file extension {} for file {}"
+def load_dfile(filepath):
+	if "." not in filepath:
+		raise Exception(ERR_NO_FILE_EXT.format(filepath))
+	ext = filepath.rpartition('.')[2]
+	if ext not in DFILE_INTERFACES:
+		raise Exception(ERR_UNKNOWN_FILE_EXT.format(ext, filepath))
+	return DFILE_INTERFACES[ext](filepath)
+
 
 
 

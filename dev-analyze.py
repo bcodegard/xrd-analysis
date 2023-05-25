@@ -475,152 +475,7 @@ def apply_shorthand(string, shorthand, context, enforce_word_boundary=True):
 
 
 
-class DFileInterface(object):
-	MSG_MISSING_BRANCHES = "could not find all requested keys in file {}. Existing keys are:"
-	ERR_MISSING_BRANCHES = "Could not load all requested branches"
-
-class DFIRoot(DFileInterface):
-	ftype = "root"
-
-	def __init__(self, df):
-		self._df = df
-		self._file = ...
-		self._keys = None
-		self._channels = None
-		self._drsnum = None
-	
-	def keys(self):
-		if self._keys is None:
-			self._keys = fileio.get_keys(self._df)
-		return self._keys
-	
-	def channels(self):
-		if self._channels is None:
-			self._channels = sorted(_.rpartition("_")[2] for _ in self.keys() if _.startswith("noise_"))
-		return self._channels
-
-	def load_branches(self, br, missing="warn"):
-		return fileio.load_branches(self._df,br,missing=missing)
-
-	def drsnum(self):
-		if self._drsnum is None:
-			test_branch = next(_ for _ in self.keys() if _.startswith("noise_"))
-			self._drsnum = test_branch.partition('_')[2].partition('_')[0]
-		return self._drsnum
-
-	def branch_suffix(self, ch):
-		return "_{bd}_{ch}".format(self.drsnum(), ch)
-
-class DFINpz(DFileInterface):
-	ftype = "npz"
-	branch_suffix = "_{ch}"
-
-	def __init__(self, df):
-		self._df = df
-		self._file = np.load(df)
-		self._keys = None
-		self._channels = None
-
-	def __del__(self):
-		self._file.close()
-	
-	def keys(self):
-		if self._keys is None:
-			self._keys = list(self._file.keys())
-		return self._keys
-	
-	def channels(self):
-		if self._channels is None:
-			# placeholder. todo: implement a check for this.
-			self._channels = (0,1,2,3,4,5,6,7)
-		return self._channels
-
-	def load_branches(self, br, missing="warn"):
-		branches = {}
-		for bname in br:
-			branch = self._file.get(bname)
-			if branch is not None:
-				branches[bname] = branch
-
-		if missing in ("warn", "raise"):
-			if not set(br).issubset(set(branches.keys())):
-				print(self.MSG_MISSING_BRANCHES.format(self._df))
-				print(self.keys())
-				if missing == "raise":
-					raise ValueError(ERR_MISSING_BRANCHES)
-
-		return branches
-
-
-	def branch_suffix(self, ch):
-		return "_{ch}".format(ch)
-
 WARN_UNKNOWN_EXTENSION = "File may have unrecognized extension. Assuming default file type ({}) for file {}"
-def find_dfile(spc):
-	"""interpret data file argument"""
-
-	dfile = spc.run
-
-	# if the os.sep character is in the supplied argument, use it as-is.
-	if os.sep in spc.run:
-		pass
-
-	# if dfile is interpretable as integer, use the numeric file template
-	elif dfile.isdigit():
-		dfile = DFILE_NUMERIC.format(dfile)
-
-	# otherwise, try to interpret it based on extension
-	else:
-		
-		# if there's no recognized file extension, use the default
-		if not any((dfile.endswith(_) for _ in spc.supported_file_extensions)):
-
-			# if there's a period in the filename, but no recognized extension, warn
-			if "." in dfile:
-				raise Warning(WARN_UNKNOWN_EXTENSION.format(
-					spc.default_data_extension,
-					dfile
-				))
-
-			dfile = "{}{}".format(
-				dfile,
-				spc.default_data_extension
-			)
-
-		# use the default directory (since there's no os.sep character
-		# in the argument, we need to make it a full path.)
-		ext = dfile.rpartition(".")[2]
-		dfile = os.sep.join([
-			DIR_DATA.get(ext, DIR_DATA_DEFAULT),
-			dfile
-		])
-
-	ext = dfile.rpartition(".")[2]
-	return dfile, ext
-
-def load_dfile(spc):
-	"""locate the requested file and open it with the
-	appropriate interface."""
-
-	dfile, ext = find_dfile(spc)
-
-	# load file with appropriate interface
-	if ext == "root":
-		dfi = DFIRoot(dfile)
-	elif ext == "npz":
-		dfi = DFINpz(dfile)
-	else:
-		raise NotImplementedError("unrecognized data file extension: {}".format(ext))
-
-	return dfi
-
-
-
-
-
-
-
-
 class Routine(object):
 
 	# list of branches which are constructed by the manager after loading
@@ -653,7 +508,7 @@ class Routine(object):
 	def procure_fit_data(self):
 
 		# open data file interface
-		self.dfi = load_dfile(self.spc)
+		self.load_dfile()
 
 		# apply shorthand to data expressions
 		self.apply_shorthand()
@@ -678,6 +533,46 @@ class Routine(object):
 
 		# evaluate the expressions for fit data
 		self.calculate_fit_data()
+
+	def load_dfile(self):
+		dfile = self.spc.run
+
+		# if the os.sep character is in the supplied argument, use it as-is.
+		if os.sep in self.spc.run:
+			pass
+
+		# if dfile is interpretable as integer, use the numeric file template
+		elif dfile.isdigit():
+			dfile = DFILE_NUMERIC.format(dfile)
+
+		# otherwise, try to interpret it based on extension
+		else:
+			
+			# if there's no recognized file extension, use the default
+			if not any((dfile.endswith(_) for _ in self.spc.supported_file_extensions)):
+
+				# if there's a period in the filename, but no recognized extension, warn
+				if "." in dfile:
+					raise Warning(WARN_UNKNOWN_EXTENSION.format(
+						self.spc.default_data_extension,
+						dfile
+					))
+
+				dfile = "{}{}".format(
+					dfile,
+					self.spc.default_data_extension
+				)
+
+			# use the default directory (since there's no os.sep character
+			# in the argument, we need to make it a full path.)
+			ext = dfile.rpartition(".")[2]
+			dfile = os.sep.join([
+				DIR_DATA.get(ext, DIR_DATA_DEFAULT),
+				dfile
+			])
+
+		ext = dfile.rpartition(".")[2]
+		self.dfi = fileio.load_dfile(dfile)
 
 	def apply_shorthand(self):
 		
