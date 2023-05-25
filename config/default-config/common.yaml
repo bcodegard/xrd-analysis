@@ -31,6 +31,7 @@ data_directory:
 # default data file extension. This extension will be assumed
 # whenever the data file is specified without an extension
 default_data_extension: ".root"
+supported_file_extensions: [".root", ".npz"]
 
 # Default data file formatter.
 # When the data file is specified as just a number, the data file

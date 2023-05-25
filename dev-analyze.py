@@ -29,9 +29,6 @@ import utils.expression as expr
 
 
 
-# list of branches which are constructed by the manager after loading
-BRANCHES_CONSTRUCT = ['entry']
-
 # todo: put this in a config file instead of code
 ROOT_FILE = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
 # ROOT_FILE = "/home/bode/Documents/drsProcessing/processed_wvf/Run{}.root"
@@ -50,73 +47,46 @@ DIR_DATA = {
 	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/dirpi/npz",
 }
 
-# recognized file extensions and the default one
-EXT_RECOGNIZED = [".root", ".npz"]
-EXT_DEFAULT = ".root"
 
 
-# shorthand for common branches, EG a1 -> area_xxxx_1
-# 
-# potential improvement: use regular expressions with capturing groups,
-# r't(?:ime|max|Max)?_?([0-9]+)' : 'tMax_{drsID}_{r[0]}'
-# 
-# string formatting will be performed on the value if the key matches,
-# with the results of any capturing groups passed as *r, and special
-# formatting like drsID passes as kwargs.
-# 
-SHORTHAND = {
-	"A{ch}":"(area_{board}_{ch}/1000)",
-	"a{ch}":"area_{board}_{ch}",
-	"w{ch}":"width_{board}_{ch}",
-	"o{ch}":"offset_{board}_{ch}",
-	"n{ch}":"noise_{board}_{ch}",
-	"s{ch}":"scaler_{board}_{ch}",
-	
-	"vv{ch}":"voltages_{board}_{ch}",
-	"v{ch}":"vMax_{board}_{ch}",
-	
-	"tt{ch}":"times_{board}_{ch}",
-	"t{ch}":"tMax_{board}_{ch}",
-	"tm{ch}":"tMax_{board}_{ch}",
-	"ts{ch}":"tStart_{board}_{ch}",
-	"te{ch}":"tEnd_{board}_{ch}",
-
-	"T{ch}":"timestamp_{board}_{ch}",
-	"T"    :"timestamp_{board}_1",
-
-	"np{ch}"  :"nPeaks30_{board}_{ch}",
-	"np10{ch}":"nPeaks10_{board}_{ch}",
-	"np20{ch}":"nPeaks20_{board}_{ch}",
-	"np30{ch}":"nPeaks30_{board}_{ch}",
-	"np40{ch}":"nPeaks40_{board}_{ch}",
-	"np50{ch}":"nPeaks50_{board}_{ch}",
-}
-
-def replace_names(string, replacements):
-	"""make replacements in string only replacing substrings which
-	match a key in replacements surrounded by non-name characters,
-	IE not alphanumeric or underscores. This ensures that only whole
-	variable names are replaced, and not parts of variable names.
-	"""
-	if replacements:
-		for pre, post in replacements.items():
-			string = re.sub(
-				r"(^|\W){pre}(?=$|\W)".format(pre=pre),
-				"\\g<1>{post}".format(post=post),
-				string,
-			)	
-	return string
 
 iseq = lambda x,y,eps=1e-9:abs(x-y)<eps
 
 
 
 
-class ddict(dict):
-	"""dict sublass which returns "{key}" for missing key.
-	Used for partial completion of string formatting."""
-	def __missing__(self,key):
-		return '{'+key+'}'
+class ObjDict(dict):
+	"""Provides recursive attribute-style access to dictionary items"""
+
+	@classmethod
+	def convert(cls, obj):
+		if isinstance(obj, cls):
+			return obj
+		if isinstance(obj, dict):
+			return cls({k:cls.convert(v) for k,v in obj.items()})
+		if isinstance(obj, list):
+			return [cls.convert(_) for _ in obj]
+		if isinstance(obj, tuple):
+			return tuple(cls.convert(_) for _ in obj)
+		if isinstance(obj, set):
+			return {cls.convert(_) for _ in obj}
+		return obj
+
+	@classmethod
+	def _convert_dict(cls, obj):
+		return {k:cls.convert(v) for k,v in obj.items()}
+
+	def __init__(self, d):
+		super(ObjDict, self).__init__(ObjDict._convert_dict(d))
+
+	def __getattr__(self, attr):
+		return self[attr]
+
+	def __setattr__(self, attr, value):
+		self[attr] = ObjDict.convert(value)
+
+	def __repr__(self):
+		return 'ObjDict({})'.format(super(ObjDict, self).__repr__())
 
 
 
@@ -466,6 +436,43 @@ def compose_parser():
 
 	return parser	
 
+def patch_args(args):
+	
+	# remove fits with no values to allow skipping positional arg
+	args.fits = [_ for _ in args.fits if _[0] is not None]
+
+def patch_cfg(cfg):
+	...
+
+def compose_specifications(args, cfg):
+	spec = config.deep_merge(vars(args),cfg)
+	return ObjDict(spec)
+
+
+
+
+def repl_template(template, ctx=None):
+	if ctx is None:
+		ctx = {}
+	def repl(match):
+		# print(match, match.string, match.groups())
+		return template.format(*match.groups(), **ctx)
+	return repl
+
+def apply_shorthand(string, shorthand, context, enforce_word_boundary=True):
+
+	modified = string
+	for pattern,template in shorthand.items():
+
+		if enforce_word_boundary:
+			pattern = r"\b" + pattern + r"\b"
+
+		modified = re.sub(pattern, repl_template(template, context), modified)
+
+	return modified
+
+
+
 
 
 class DFileInterface(object):
@@ -548,16 +555,14 @@ class DFINpz(DFileInterface):
 	def branch_suffix(self, ch):
 		return "_{ch}".format(ch)
 
-
-
-
-def find_dfile(args):
+WARN_UNKNOWN_EXTENSION = "File may have unrecognized extension. Assuming default file type ({}) for file {}"
+def find_dfile(spc):
 	"""interpret data file argument"""
 
-	dfile = args.run
+	dfile = spc.run
 
 	# if the os.sep character is in the supplied argument, use it as-is.
-	if os.sep in args.run:
+	if os.sep in spc.run:
 		pass
 
 	# if dfile is interpretable as integer, use the numeric file template
@@ -568,13 +573,19 @@ def find_dfile(args):
 	else:
 		
 		# if there's no recognized file extension, use the default
-		if not any((dfile.endswith(_) for _ in EXT_RECOGNIZED)):
+		if not any((dfile.endswith(_) for _ in spc.supported_file_extensions)):
 
 			# if there's a period in the filename, but no recognized extension, warn
 			if "." in dfile:
-				raise Warning("File may have unrecognized extension. Assuming default file type ({}) for file {}".format(EXT_DEFAULT, dfile))
+				raise Warning(WARN_UNKNOWN_EXTENSION.format(
+					spc.default_data_extension,
+					dfile
+				))
 
-			dfile = "{}{}".format(dfile,EXT_DEFAULT)
+			dfile = "{}{}".format(
+				dfile,
+				spc.default_data_extension
+			)
 
 		# use the default directory (since there's no os.sep character
 		# in the argument, we need to make it a full path.)
@@ -587,11 +598,11 @@ def find_dfile(args):
 	ext = dfile.rpartition(".")[2]
 	return dfile, ext
 
-def load_dfile(args):
+def load_dfile(spc):
 	"""locate the requested file and open it with the
 	appropriate interface."""
 
-	dfile, ext = find_dfile(args)
+	dfile, ext = find_dfile(spc)
 
 	# load file with appropriate interface
 	if ext == "root":
@@ -609,25 +620,6 @@ def load_dfile(args):
 
 
 
-def repl_template(template, ctx=None):
-	if ctx is None:
-		ctx = {}
-	def repl(match):
-		# print(match, match.string, match.groups())
-		return template.format(*match.groups(), **ctx)
-	return repl
-
-def apply_shorthand(string, shorthand, context, enforce_word_boundary=True):
-
-	modified = string
-	for pattern,template in shorthand.items():
-
-		if enforce_word_boundary:
-			pattern = r"\b" + pattern + r"\b"
-
-		modified = re.sub(pattern, repl_template(template, context), modified)
-
-	return modified
 
 class Routine(object):
 
@@ -1116,484 +1108,8 @@ class Routine(object):
 
 
 
-def procure_data(args):
-	"""Load branches from specified file as needed to calculate
-	all fit and cut expressions. Then apply cuts and binning, and
-	return only the processed fit data."""
 
-	# locate and load the specified data file
-	dfi = load_dfile(args)
-	
-	# look up list of all branches in the specified root file
-	branches_all = dfi.keys()
 
-	# get list of channels present in the data file
-	channels = dfi.channels()
-	
-	# apply shorthand (a1 -> area_xxxx_1, etc.)
-	# any matching channels: fill replacements using templates in SHORTHAND
-	# 
-	# todo: let this be defined per DFileInterface subclass
-	# todo: implement shorthand via regex with capturing groups
-	#       pattern_with_capturing_groups:format_string_if_matching
-	# 
-	if (dfi.ftype=='root') and channels:
-		# determine four-digit number of DRS board used
-		board = dfi.drsnum()
-
-		replacements = {}
-		for pre,post in SHORTHAND.items():
-			if "{ch}" in pre:
-				replacements.update(
-					{pre.format(ch=_):post.format(board=board,ch=_) for _ in channels}
-				)
-			else:
-				replacements.update(
-					{pre:post.format(board=board,ch=next(_ for _ in channels))}
-				)
-	# no matching branches found: don't apply shorthand
-	else:
-		replacements = {}
-
-
-	# set of branches needed to evaluate all fits, cuts, and defs
-	branches_needed = set()
-
-	# compile expressions for fits, and update branches_needed
-	fn_fits = []
-	for fit in args.fits:
-		fn = expr.check_and_compile(replace_names(fit[0], replacements))
-		fn_fits.append(fn)
-		branches_needed |= fn.kwargnames
-
-	# likewise for plots, but only supporting literals. to plot expressions,
-	# first use --def.
-	for plot in args.scatterplots:
-		branches_needed |= {replace_names(plot[0],replacements),replace_names(plot[1],replacements)}
-	
-	# copy at this point to capture branches needed for fit expressions
-	branches_needed_fit = branches_needed.copy()
-	
-	# compile expressions for cuts, and update branches_needed
-	fn_cuts = []
-	for cut in args.cuts:
-		fn = expr.check_and_compile(replace_names(cut[0], replacements))
-		fn_cuts.append(fn)
-		branches_needed |= fn.kwargnames
-
-	# copy branches_needed at this point to capture which are needed
-	# explicitly for fits and cuts
-	branches_fit_and_cut = branches_needed.copy()
-	
-	# compile expressions for defs, and update branches_needed.
-	# also track the branches that are defined, so that they can
-	# be excluded from the set of branches to load from the file.
-	fn_defs = []
-	branches_def = set()
-	for def_ in args.defs:
-		fn = expr.check_and_compile(replace_names(def_[1], replacements))
-		fn_defs.append(fn)
-		branches_def |= {def_[0]}
-		branches_needed |= fn.kwargnames
-	
-
-
-
-	# load branches from specified file, allowing for missing
-	# branches. missing branches must be generated by one of the
-	# defs included.
-	branches = dfi.load_branches(
-		branches_needed-(set(BRANCHES_CONSTRUCT)|branches_def)
-	)
-
-	# initialize the branch manager instance with the resulting branches
-	bm = data.BranchManager(branches, export_copies=False, import_copies=False)
-
-	for key in bm.keys:
-		print(key, bm[key].dtype, bm[key].shape)
-
-	# construct special branches if needed
-	if "entry" in branches_needed:
-		bm.bud(data.bud_entry)
-
-	# apply scaler rectification
-	if args.rectify_scalers:
-		if any(_.startswith("scaler_") for _ in bm.keys):
-			bm.bud(data.rectify_scaler(), overwrite=True)
-
-	# apply timestamp fix and localization
-	if any(_.startswith("timestamp_") for _ in bm.keys):
-		bm.bud(data.fix_monotonic_timestamp(), overwrite=True)
-		if args.localize_timestamps:
-			bm.bud(data.localize_timestamp(), overwrite=True)
-
-
-	# process defs to create new branches
-	# todo: current implementation is slightly inefficient. defs
-	# are evaluated before applying any cuts, resulting in excess
-	# computation in the case where cuts do not depend on defs.
-	# an implementation which applies each cut as soon as it is able to,
-	# and prioritizes defs which enable cuts, would be faster.
-	# it would also get rid of "divide by zero encountered in true_divice" errors.
-	fn_defs_remain = [True for _ in fn_defs]
-	n_remaining = len(fn_defs)
-	n_round = 0
-	while n_remaining:
-
-		n_round += 1
-		if args.verbosity >= 2:
-			print("branch construction, round {}; {} remain".format(n_round, n_remaining))
-
-		for i,remain in enumerate(fn_defs_remain):
-
-			if remain and fn_defs[i].kwargnames.issubset(bm.keys):
-
-				if args.verbosity >= 2:
-					print("can    construct branch {}/{} this round".format(i+1,n_remaining))
-
-				this_name = args.defs[i][0]
-				this_fn = fn_defs[i]
-
-				bm.bud(
-					lambda man:{this_name:this_fn(**{_:man[_] for _ in this_fn.kwargnames})}
-				)
-				if args.verbosity >= 2:
-					print("created branch {} with shape {}".format(this_name, bm[this_name].shape))
-
-				fn_defs_remain[i] = False
-
-			elif (args.verbosity >= 2) and remain:
-				print("cannot construct branch {}/{} this round".format(i+1,n_remaining))
-
-		# if we have all branches needed for fits and cuts, there's
-		# no need to keep evaluating defs
-		if branches_fit_and_cut.issubset(bm.keys):
-			print("successfully constructed all branches")
-			break
-
-		# check to see if progress has been made
-		# if not, then it never will, and we have to exit
-		n_remaining_now = sum(fn_defs_remain)
-		if n_remaining_now == n_remaining:
-			print("could not evaluate all definititions and transformations")
-			print("missing one or more variables for completion")
-			print("missing: {}".format(branches_fit_and_cut - set(bm.keys)))
-			sys.exit(1)
-
-		n_remaining = n_remaining_now
-
-	# discard all branches not in branches_fit_and_cut
-	bm.prune(set(bm.keys) - branches_fit_and_cut)
-
-	# wrapper functions to capture loop variable values
-	# if we don't use these, the overwritten value of fn and other
-	# variables used in the loop will change, and the change will affect
-	# the function calls to calculate masks
-	def mask_bool(fn):
-		mask = lambda man:fn(**{_:man[_] for _ in fn.kwargnames})
-		return mask
-	def mask_range(fn,lo,hi):
-		mask = lambda man:data.inrange(fn(**{_:man[_] for _ in fn.kwargnames}),lo,hi)
-		return mask
-	
-	# process cuts
-	masks = []
-	for icut,fn in enumerate(fn_cuts):
-		this_cut = args.cuts[icut]
-
-		# no bounds specified: boolean expression
-		if (this_cut[1] is None) and (this_cut[2] is None):
-			masks.append(mask_bool(fn))
-
-		# at least one bound specified: lo<expression<hi
-		else:
-			masks.append(mask_range(fn,this_cut[1],this_cut[2]))
-
-	# apply combined mask
-	# todo: this applies the mask to branches that are needed to calculate
-	# the mask, but not afterward. could save some computation by first
-	# generating the mask, then discarding unneeded branches, then appling
-	# the mask.
-	if masks:
-		# combined_mask = 
-		bm.mask(data.mask_all(*masks), apply_mask=True)
-	
-	# discard all branches not needed for fits
-	bm.prune((bm.keys) - branches_needed_fit)
-
-
-	# we now have all the branches that show up in the expression
-	# for at least one fit. to get the fit data, we have still have to
-	# evaluate the expressions.
-	fit_data = []
-	for fn in fn_fits:
-		fit_data.append(fn(**{_:bm[_] for _ in fn.kwargnames}))
-		if args.verbosity >= 1:
-			print("calculated fit data with shape {}".format(fit_data[-1].shape))
-
-	# print statistics if requested
-	if args.means:
-		for ifit,fit in enumerate(args.fits):
-			print("")
-			print(fit[0])
-			print("mean: {}".format(fit_data[ifit].mean()))
-		print("")
-
-
-
-	# 2d scatterplots if requested
-	if args.scatterplots:
-		
-		for plot in args.scatterplots:
-			# print(replace_names(plot[0], replacements))
-			# print(replace_names(plot[1], replacements))
-			plt.plot(
-				bm[replace_names(plot[0], replacements)],
-				bm[replace_names(plot[1], replacements)],
-				marker    = plot[2],
-				linestyle = plot[3],
-				color     = plot[4],
-				label = plot[5],
-			)
-			plt.xlabel(plot[0])
-			plt.ylabel(plot[1])
-		
-		decorate_plot(args)
-
-		if args.save_fig:
-			fname, dpi, fmt, hi, wi = args.save_fig
-			if fname:
-				if '.' not in fname:
-					fname = '{}.{}'.format(fname, fmt)
-				plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
-
-		
-		# plt.show()
-		# if not args.mapplots:
-			# sys.exit(0)
-			# return [],[]
-
-
-	# get counts and edges by binning data_fit_raw
-	fit_counts = []
-	fit_edges = []
-	for i,fit in enumerate(args.fits):
-		this_data = fit_data[i]
-
-		# determine bin edges
-		lo = this_data[~np.isnan(this_data)].min() if fit[1] in [None,-np.inf] else fit[1]
-		hi = this_data[~np.isnan(this_data)].max() if fit[2] in [None, np.inf] else fit[2]
-		# lo = np.percentile(this_data[~np.isnan(this_data)],  0.2) if fit[1] in [None,-np.inf] else fit[1]
-		# hi = np.percentile(this_data[~np.isnan(this_data)], 99.8) if fit[2] in [None, np.inf] else fit[2]
-
-		if fit[3]:
-			nbins = fit[3]
-		else:
-			this_ndata = data.inrange(this_data,lo,hi,True,True).sum()
-			nbins = data.bin_count_from_ndata(this_ndata)
-		print(i,lo,hi,nbins)
-		if fit[4].startswith("li"):
-			this_edges = data.edges_lin(lo,hi,nbins)
-		elif fit[4].startswith("lo"):
-			if lo<=0:
-				lo = this_data[this_data>0].min()
-			this_edges = data.edges_log(lo,hi,nbins)
-		elif fit[4].startswith("s"):
-			this_edges = data.edges_symlog(lo,hi,nbins)
-		
-		# calculate histogram counts and append
-		this_counts, _ = np.histogram(this_data, this_edges)
-		# scale by constant multiplier (1.0 by default)
-		this_counts = this_counts * fit[6]
-		fit_counts.append(this_counts)
-		fit_edges.append(this_edges)
-
-
-	# make 2d mapplots if specified
-	if args.mapplots:
-		gs = display.pairs2d(
-			fit_data,
-			fit_edges,
-			[_[4].startswith("lo") for _ in args.fits],
-			[_[5] if _[5] else _[0] for _ in args.fits],
-			cmap="afmhot",
-			cbad="grey",
-			norm="log" if args.ylog else None,
-		)
-
-		if args.title:
-			plt.suptitle(args.title)
-
-		# print(plt.rcParams["figure.figsize"])
-		# plt.rcParams["figure.figsize"] = [12.0,8.0]
-		# plt.rcParams["figure.autolayout"] = True
-
-		fig = plt.gcf()
-
-		if args.save_fig:
-			if args.save_fig[4]:
-				fig.set_figheight(args.save_fig[4])
-			if args.save_fig[3]:
-				fig.set_figwidth(args.save_fig[3])
-			fname, dpi, fmt, wi, hi = args.save_fig
-			if fname:
-				if '.' not in fname:
-					fname = '{}.{}'.format(fname, fmt)
-				plt.savefig(FIG_FILE.format(fname), dpi=dpi, format=fmt)
-
-		plt.show()
-		sys.exit(0)
-
-
-	return fit_counts, fit_edges
-
-
-def model_counts(args, fit_counts, fit_edges):
-	return None
-
-
-def display_and_write(args, fit_counts, fit_edges, model_results_placeholder):
-	return None
-
-
-def decorate_plot(args,):
-	
-	# hlines and vlines
-	for loc,col,ls,label in args.vlines:
-		plt.axvline(loc, color=col, ls=ls, label=label)
-	for loc,col,ls,label in args.hlines:
-		plt.axhline(loc, color=col, ls=ls, label=label)
-	for lo,hi,fc,alph,ec,lw,label in args.vspans:
-		facecolor = colors.to_rgb(fc)+(alph,)
-		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
-		plt.axvspan(
-			lo,hi,
-			facecolor=facecolor,
-			edgecolor=edgecolor,
-			linewidth=lw,
-			label=label,
-		)
-	for lo,hi,fc,alph,ec,lw,label in args.hspans:
-		facecolor = colors.to_rgb(fc)+(alph,)
-		edgecolor = ec if ec is None else colors.to_rgb(ec)+(1,)
-		plt.axhspan(
-			lo,hi,
-			facecolor=facecolor,
-			edgecolor=edgecolor,
-			linewidth=lw,
-			label=label,
-		)
-
-	# decoration
-	plt.legend()
-	if args.title:
-		plt.title(args.title)
-	if args.xlabel:
-		plt.xlabel(args.xlabel)
-	if args.ylabel:
-		plt.ylabel(args.ylabel)
-
-	# ticks
-	if args.xticks:
-		plt.xticks(args.xticks)
-
-	# scaling
-	if args.ylog:
-		plt.yscale("log")
-	if args.fits and args.fits[-1][4].startswith("lo"):
-		plt.xscale("log")
-	elif args.fits and args.fits[-1][4].startswith("s"):
-		...
-
-
-def main(args,iset=None,nsets=None):
-
-	if args.verbosity >= 1:
-		
-		# placeholder diagnostic info: just print whole set of args
-		klmax = max([len(_) for _ in args.keys()])
-		print("args")
-		for i,kv in enumerate(args.items()):
-			print("{} : {}".format(str(kv[0]).ljust(klmax), kv[1]))
-		print("")
-
-	# load, process, cut, and bin data into form ready for fitting
-	fit_counts, fit_edges = procure_data(args)
-
-	# construct models and fit them to data
-	model_results_placeholder = model_counts(args, fit_counts, fit_edges)
-
-	# display and/or save information
-	display_and_write(args, fit_counts, fit_edges, model_results_placeholder)
-
-
-	# testing fit data results: just show plots with counts
-	print("")
-	if not args.scatterplots:
-		for i,fit in enumerate(args.fits):
-			print("fit {:>12} - total counts {:>7}".format(fit[0], fit_counts[i].sum()))
-			plt.step(
-				(fit_edges[i][1:]+fit_edges[i][:-1])*0.5,
-				fit_counts[i],
-				where='mid',
-				label=fit[5] if fit[5] else fit[0],
-			)
-
-	decorate_plot(args)
-	
-	# if (iset is None) or (iset == nsets-1):
-	# 	plt.show()
-
-	return fit_counts, fit_edges
-
-
-
-
-
-def patch_args(args):
-	
-	# remove fits with no values to allow skipping positional arg
-	args.fits = [_ for _ in args.fits if _[0] is not None]
-
-def patch_cfg(cfg):
-	...
-
-def compose_specifications(args, cfg):
-	spec = config.deep_merge(vars(args),cfg)
-	return ObjDict(spec)
-
-class ObjDict(dict):
-	"""Provides recursive attribute-style access to dictionary items"""
-
-	@classmethod
-	def convert(cls, obj):
-		if isinstance(obj, cls):
-			return obj
-		if isinstance(obj, dict):
-			return cls({k:cls.convert(v) for k,v in obj.items()})
-		if isinstance(obj, list):
-			return [cls.convert(_) for _ in obj]
-		if isinstance(obj, tuple):
-			return tuple(cls.convert(_) for _ in obj)
-		if isinstance(obj, set):
-			return {cls.convert(_) for _ in obj}
-		return obj
-
-	@classmethod
-	def _convert_dict(cls, obj):
-		return {k:cls.convert(v) for k,v in obj.items()}
-
-	def __init__(self, d):
-		super(ObjDict, self).__init__(ObjDict._convert_dict(d))
-
-	def __getattr__(self, attr):
-		return self[attr]
-
-	def __setattr__(self, attr, value):
-		self[attr] = ObjDict.convert(value)
-
-	def __repr__(self):
-		return 'ObjDict({})'.format(super(ObjDict, self).__repr__())
 
 
 
