@@ -8,10 +8,10 @@ __version__ = "0.1"
 import os
 import argparse
 
-import utils.cli    as cli
-import utils.config as config
+import xrd.core.cli    as cli
+import xrd.core.config as config
 
-import process.ant as ant
+import xrd.process.ant as ant
 
 
 # todo: put these in config file

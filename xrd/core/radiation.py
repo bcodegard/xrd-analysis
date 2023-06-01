@@ -6,7 +6,7 @@ access for common data about radioactive sources and their properties
 __author__ = "Brunel Odegard"
 __version__ = "0.0"
 
-from utils.data import invert_dictionary
+from ..process.data import invert_dictionary
 
 
 

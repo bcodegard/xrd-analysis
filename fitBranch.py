@@ -16,12 +16,14 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
-import utils.fileio  as fileio
-import utils.display as display
-import utils.model   as model
-import utils.data    as data
-import utils.cli     as cli
-import utils.config  as config
+import xrd.core.fileio  as fileio
+import xrd.core.cli     as cli
+import xrd.core.config  as config
+
+import xrd.process.model   as model
+import xrd.process.data    as data
+
+import xrd.ui.display as display
 
 
 

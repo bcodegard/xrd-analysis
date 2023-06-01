@@ -18,13 +18,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
-import utils.cli     as cli
-import utils.data    as data
-import utils.model   as model
-import utils.fileio  as fileio
-import utils.config  as config
-import utils.display as display
-import utils.expression as expr
+import xrd.core.cli        as cli
+import xrd.core.fileio     as fileio
+import xrd.core.config     as config
+import xrd.core.expression as expr
+
+import xrd.process.data    as data
+import xrd.process.model   as model
+
+import xrd.ui.display as display
+
 
 
 

@@ -13,7 +13,7 @@ from yaml import safe_load
 
 
 # directory to look for config files, if not specified
-_DIR_CONFIG = os.sep.join([os.path.dirname(__file__), '..', 'config'])
+_DIR_CONFIG = os.sep.join([os.path.dirname(__file__), '..', '..', 'config'])
 
 # directory to look for default config files, if not specified
 _SUBDIR_DEFAULT_CONFIG = "default-config"
