@@ -112,4 +112,4 @@ shorthand:
       '[vV]{2}_?([0-9]+)' : 'voltages_{drs}_{0}'
       '[tT]{2}_?([0-9]+)' : 'times_{drs}_{0}'
 
-    npz: []
+    npz: {}

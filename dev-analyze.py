@@ -680,6 +680,9 @@ class Routine(object):
 		# initialize the branch manager instance with the resulting branches
 		self.bm = data.BranchManager(branches, export_copies=False, import_copies=False)
 
+		for branch in self.bm.keys:
+			print(branch, self.bm[branch].shape)
+
 		# for key in self.bm.keys:
 		# 	print(key, self.bm[key].dtype, self.bm[key].shape)
 
@@ -823,8 +826,8 @@ class Routine(object):
 			
 			for plot in self.spc.scatterplots:
 				plt.plot(
-					bm[plot[0]],
-					bm[plot[1]],
+					self.bm[plot[0]],
+					self.bm[plot[1]],
 					marker    = plot[2],
 					linestyle = plot[3],
 					color     = plot[4],
