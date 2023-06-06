@@ -11,7 +11,7 @@ for ((i=$1;i<=$2;i++)) do
 		echo "run ${i} exists; downloading it"
 		curl "http://cms2.physics.ucsb.edu/DRS/Run${i}/Run${i}_pulses.ant" --output "./data/rpi/ant/Run${i}_pulses.ant"
 	else
-		echo "run ${I} does not exist"
+		echo "run ${i} does not exist"
 	fi
 
 done;

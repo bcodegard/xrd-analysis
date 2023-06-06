@@ -46,8 +46,7 @@ DFILE_NUMERIC = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
 DIR_DATA_DEFAULT = "../xrd-analysis/data/scint-experiment/root"
 DIR_DATA = {
 	"root":"../xrd-analysis/data/scint-experiment/root",
-	# "npz" :"/home/bode/Documents/python/xrd-scope-pulses/runs/npz-low-thresh",
-	"npz" :"/home/bode/Documents/python/xrd-scope-pulses/dirpi/npz",
+	"npz":"../xrd-analysis/data/rpi/npz",
 }
 
 
