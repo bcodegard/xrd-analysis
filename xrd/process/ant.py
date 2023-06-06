@@ -29,23 +29,23 @@ def fint(string):
 # second entry is data type for the output array
 # third entry is used to parse the values from the ant file
 COLUMN_ASSIGNMENT = [
-    (2 , int  , int  , "event"                 ), # event number
-    (0 , float, float, "time_in_run"           ), # time since start of run (currently just set to event number)
-    (0 , float, float, "time_since_last_event" ), # time between events (currently jusy set to 1)
-    (1 , int  , int  , "np_allch"              ), # number of pulses in the event in any channel
-    (1 , int  , int  , "np_ch1"                ), # number of pulses in channel 1 in the event
-    (1 , int  , int  , "np_ch2"                ), # number of pulses in channel 2 in the event
-    (1 , int  , int  , "np_ch3"                ), # number of pulses in channel 3 in the event
-    (1 , int  , int  , "np_ch4"                ), # number of pulses in channel 4 in the event
-    (2 , float, float, "pprms"                 ), # RMS of the waveform containing this particular pulse, as measured from samples at the start of the waveform
-    (2 , int  , int  , "channel"               ), # channel number
-    (2 , int  , fint , "ipulse"                ), # pulse number within this channel (starts at 0 for first pulse)
-    (2 , float, float, "tstart"                ), # time of the pulse within the waveform, in ns
-    (2 , float, float, "area"                  ), # area of the pulse in nVs
-    (2 , float, float, "height"                ), # height of the pulse in mV
-    (2 , float, float, "width"                 ), # width of the pulse in ns
-    (2 , float, float, "area_npe"              ), # area of the pulse calibrated to number of photoelectrons
-    (2 , float, float, "area_kev"              ), # area of the pulse calibrated in keV
+    (2 , int  , int  , "event"           ), # event number
+    (1 , float, float, "timestamp"       ), # time since start of run (currently just set to event number)
+    (1 , float, float, "delta_timestamp" ), # time between events (currently jusy set to 1)
+    (1 , int  , int  , "np_allch"        ), # number of pulses in the event in any channel
+    (1 , int  , int  , "np_ch1"          ), # number of pulses in channel 1 in the event
+    (1 , int  , int  , "np_ch2"          ), # number of pulses in channel 2 in the event
+    (1 , int  , int  , "np_ch3"          ), # number of pulses in channel 3 in the event
+    (1 , int  , int  , "np_ch4"          ), # number of pulses in channel 4 in the event
+    (2 , float, float, "pprms"           ), # RMS of the waveform containing this particular pulse, as measured from samples at the start of the waveform
+    (2 , int  , int  , "channel"         ), # channel number
+    (2 , int  , fint , "ipulse"          ), # pulse number within this channel (starts at 0 for first pulse)
+    (2 , float, float, "tstart"          ), # time of the pulse within the waveform, in ns
+    (2 , float, float, "area"            ), # area of the pulse in nVs
+    (2 , float, float, "height"          ), # height of the pulse in mV
+    (2 , float, float, "width"           ), # width of the pulse in ns
+    (2 , float, float, "area_npe"        ), # area of the pulse calibrated to number of photoelectrons
+    (2 , float, float, "area_kev"        ), # area of the pulse calibrated in keV
 ]
 
 # characters in this string will be stripped from the start and end of

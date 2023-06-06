@@ -30,10 +30,6 @@ def compose_parser():
 	# version
 	parser.add_argument("--version",action="version",version="%(prog)s {}".format(__version__))
 
-	# verbosity
-	parser.add_argument("-v",action='count',dest="verbosity",default=0,help="verbosity")
-
-
 	# the main argument: which runs to process.
 	# each argument can be a single number, or a range indicated by 
 	# a dash, E.G. 1000-1500 (inclusive on both sides.)
@@ -93,6 +89,9 @@ def compose_parser():
 		help="reprocess runs. unless this flag is given, runs with already-existing .npz files will be skipped."
 	)
 
+	# quiet
+	parser.add_argument("-q",action='store_true',dest="quiet",help="quiet mode. if given, results per run will not be printed.")
+
 	return parser
 
 
@@ -114,20 +113,20 @@ def main(args):
 
 		# skip run if input file missing
 		if not os.path.exists(fi):
-			if args.verbosity:
-				print("run {} skipped; input file missing")
+			if not args.quiet:
+				print("run {} skipped; input file missing".format(run))
 			continue
 
 		# skip run if output file already exists, unless -r flag
 		if (not args.reprocess) and os.path.exists(fo):
-			if args.verbosity:
+			if not args.quiet:
 				print("run {} skipped; processed file already exists".format(run))
 			continue
 
 		# try to process the run
 		try:
 			ant.convert_ant_to_npz(fi,fo)
-			if args.verbosity:
+			if not args.quiet:
 				print("run {} success".format(run))
 		except Exception as e:
 			print("run {} failed: {}".format(run,e))
