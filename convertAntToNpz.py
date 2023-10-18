@@ -17,7 +17,7 @@ import xrd.process.ant as ant
 # todo: put these in config file
 INDIR  = os.sep.join([".", "data", "rpi", "ant"])
 OUTDIR = os.sep.join([".", "data", "rpi", "npz"])
-FI_TEMPLATE = "Run{}_pulses.ant"
+FI_TEMPLATE = "Run{}_dirpipulses.ant"
 FO_TEMPLATE = "Run{}.npz"
 
 
@@ -92,6 +92,9 @@ def compose_parser():
 	# quiet
 	parser.add_argument("-q",action='store_true',dest="quiet",help="quiet mode. if given, results per run will not be printed.")
 
+	# old pulse file format
+	parser.add_argument("-p",action='store_true',dest="pulse_fmt_old",help="use old pulse file format")
+
 	return parser
 
 
@@ -125,7 +128,10 @@ def main(args):
 
 		# try to process the run
 		try:
-			ant.convert_ant_to_npz(fi,fo)
+			if args.pulse_fmt_old:
+				ant.convert_pulses(fi,fo)
+			else:
+				ant.convert_dirpipulses(fi,fo)
 			if not args.quiet:
 				print("run {} success".format(run))
 		except Exception as e:

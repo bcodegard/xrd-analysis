@@ -644,9 +644,31 @@ class DFINpz(DFileInterface):
 
 		return branches
 
-
 	def branch_suffix(self, ch):
 		return "_{ch}".format(ch)
+
+# class DFILocalOrWeb(DFileInterface):
+	
+# 	def __init__(self, df):
+# 		...
+# 		# check if local file exists
+# 		# if not, look for web file for the given run number, pull and process that
+# 		# if enabled, save the resulting processed file to the location that the local file would have been
+
+# 	def __del__(self):
+# 		...
+
+# 	def keys(self):
+# 		...
+
+# 	def channels(self):
+# 		...
+
+# 	def load_branches(self, br, missing="warn"):
+# 		...
+
+# 	def branch_suffix(self, ch):
+# 		...
 
 DFILE_INTERFACES = {
 	"root": DFIRoot,
@@ -655,6 +677,12 @@ DFILE_INTERFACES = {
 ERR_NO_FILE_EXT      = "No file extension in file {}"
 ERR_UNKNOWN_FILE_EXT = "Unrecognized file extension {} for file {}"
 def load_dfile(filepath):
+	# TODO: change how interface selection works
+	# > Each interface has function that decides whether to accept a given dfile, with context
+	# > Have list of interfaces in order of priority
+	# > The first interface that accepts, gets to handle it
+	# Ideally, the order should be configurable w/o editing source code.
+	# Maybe add an argument that explicitly requests a specific interface.
 	if "." not in filepath:
 		raise Exception(ERR_NO_FILE_EXT.format(filepath))
 	ext = filepath.rpartition('.')[2]

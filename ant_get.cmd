@@ -7,9 +7,9 @@
 for /l %%r in (%1, 1, %2) do (
 
 	: check if file exists by looking at the header
-	curl "http://cms2.physics.ucsb.edu/DRS/Run%%r/Run%%r_pulses.ant" --output nul --head --fail --silent && (
+	curl "http://cms2.physics.ucsb.edu/DRS/Run%%r/Run%%r_dirpipulses.ant" --output nul --head --fail --silent && (
 		: download the file if it exists
-		curl "http://cms2.physics.ucsb.edu/DRS/Run%%r/Run%%r_pulses.ant" --output ".\data\rpi\ant\Run%%r_pulses.ant"
+		curl "http://cms2.physics.ucsb.edu/DRS/Run%%r/Run%%r_dirpipulses.ant" --output ".\data\rpi\ant\Run%%r_dirpipulses.ant"
 	) || (echo run %%r curl unsucessful)
 	echo.
 )

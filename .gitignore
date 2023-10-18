@@ -8,6 +8,9 @@ data/
 figs/
 temp/
 
+# testing / development scripts
+test*.py
+
 # data files
 *.csv
 *.root

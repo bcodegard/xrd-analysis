@@ -884,7 +884,7 @@ class Routine(object):
 				[_[4].startswith("lo")  for _ in self.spc.fits],
 				[_[5] if _[5] else _[0] for _ in self.spc.fits],
 				cmap="afmhot",
-				cbad="grey",
+				cbad="#a0a0a0",
 				norm="log" if self.spc.ylog else None,
 			)
 
