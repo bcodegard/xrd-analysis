@@ -120,6 +120,12 @@ def main(args):
 				print("run {} skipped; input file missing".format(run))
 			continue
 
+		# skip if input file empty
+		if not os.path.getsize(fi):
+			if not args.quiet:
+				print("run {} skipped; input file empty".format(run))
+			continue
+
 		# skip run if output file already exists, unless -r flag
 		if (not args.reprocess) and os.path.exists(fo):
 			if not args.quiet:
