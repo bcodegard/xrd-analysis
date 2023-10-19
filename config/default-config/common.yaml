@@ -15,6 +15,11 @@
 data_directory:
   base: [".","data"]
 
+  by_file_type:
+    root: ["{base}", "root"]
+    npz: ["{base}", "rpi", "npz"]
+    ant: ["{base}", "rpi", "ant"]
+
   rpi_txt: ["{base}", "rpi", "txt"]
   rpi_np : ["{base}", "rpi", "np"]
   scint_sim_root: ["{base}", "scint-simulation", "root"]
@@ -112,4 +117,6 @@ shorthand:
       '[vV]{2}_?([0-9]+)' : 'voltages_{drs}_{0}'
       '[tT]{2}_?([0-9]+)' : 'times_{drs}_{0}'
 
-    npz: {}
+    npz:
+      'n_?([0-9]+)' : 'nCh{0}Pulses'
+      'T'           : 'tInRun'

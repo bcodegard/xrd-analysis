@@ -31,25 +31,8 @@ import xrd.ui.display as display
 
 
 
-
-# todo: put this in a config file instead of code
-ROOT_FILE = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
-# ROOT_FILE = "/home/bode/Documents/drsProcessing/processed_wvf/Run{}.root"
 FIG_FILE = "./figs/{}"
 ARG_MULTI = ["AND","and"]
-
-
-# if file argument is interpretable as an integer, this template will be used.
-DFILE_NUMERIC = "../xrd-analysis/data/scint-experiment/root/Run{}.root"
-
-# default location(s) in which to look for files
-DIR_DATA_DEFAULT = "../xrd-analysis/data/scint-experiment/root"
-DIR_DATA = {
-	"root":"../xrd-analysis/data/scint-experiment/root",
-	"npz":"../xrd-analysis/data/rpi/npz",
-}
-
-
 
 
 iseq = lambda x,y,eps=1e-9:abs(x-y)<eps
@@ -132,7 +115,7 @@ def compose_parser():
 		default=[],
 		help="same as fit, used to specify multiple while allowing positional specification for first",
 	)
-	
+
 	# cuts
 	parser.add_argument(
 		"--cut","--c",
@@ -164,7 +147,7 @@ def compose_parser():
 		default=[],
 		help="(NYI) cut on points being in the convex hull of the supplied vertices",
 	)
-	
+
 	# expression definitions
 	parser.add_argument(
 		"--def", "--d",
@@ -536,44 +519,25 @@ class Routine(object):
 		# evaluate the expressions for fit data
 		self.calculate_fit_data()
 
-	def load_dfile(self):
-		dfile = self.spc.run
-
-		# if the os.sep character is in the supplied argument, use it as-is.
-		if os.sep in self.spc.run:
-			pass
+	def interpret_dfile(self, dfile):
+		# if os.sep is in dfile, use it as-is
+		if os.sep in dfile:
+			return dfile
 
 		# if dfile is interpretable as integer, use the numeric file template
-		elif dfile.isdigit():
-			dfile = DFILE_NUMERIC.format(dfile)
+		if dfile.isdigit():
+			dfile = self.spc.default_data_file.format(num=dfile)
 
-		# otherwise, try to interpret it based on extension
-		else:
-			
-			# if there's no recognized file extension, use the default
-			if not any((dfile.endswith(_) for _ in self.spc.supported_file_extensions)):
-
-				# if there's a period in the filename, but no recognized extension, warn
-				if "." in dfile:
-					raise Warning(WARN_UNKNOWN_EXTENSION.format(
-						self.spc.default_data_extension,
-						dfile
-					))
-
-				dfile = "{}{}".format(
-					dfile,
-					self.spc.default_data_extension
-				)
-
-			# use the default directory (since there's no os.sep character
-			# in the argument, we need to make it a full path.)
-			ext = dfile.rpartition(".")[2]
-			dfile = os.sep.join([
-				DIR_DATA.get(ext, DIR_DATA_DEFAULT),
-				dfile
-			])
-
+		# choose directory based on extension
+		ddir_base = os.sep.join(self.spc.data_directory.base)		
 		ext = dfile.rpartition(".")[2]
+		ddir = os.sep.join(self.spc.data_directory.by_file_type.get(ext, ["{base}"])).format(base=ddir_base)
+		dfile = os.sep.join([ddir, dfile])
+
+		return dfile
+
+	def load_dfile(self):
+		dfile = self.interpret_dfile(self.spc.run)
 		self.dfi = fileio.load_dfile(dfile)
 
 	def apply_shorthand(self):
